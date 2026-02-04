@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BrandFilter } from "@/components/ui/brand-filter";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -74,6 +75,7 @@ export default function PurchasesHistoryPage() {
   const { profile, isAdmin } = useAuth();
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [brand, setBrand] = useState<string>("all");
   const pageSize = 20;
 
   // Fetch warehouses (for admin dropdown)
@@ -94,10 +96,10 @@ export default function PurchasesHistoryPage() {
     }
   }, [profile, isAdmin, warehouses, selectedWarehouse]);
 
-  // Reset page when warehouse changes
+  // Reset page when warehouse or brand changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedWarehouse]);
+  }, [selectedWarehouse, brand]);
 
   // Fetch purchase (RESTOCK) transactions for the selected warehouse
   const {
@@ -105,12 +107,13 @@ export default function PurchasesHistoryPage() {
     isLoading,
     error,
   } = useQuery<TransactionListResponse>({
-    queryKey: ["transactions", selectedWarehouse, "RESTOCK", currentPage],
+    queryKey: ["transactions", selectedWarehouse, "RESTOCK", currentPage, brand],
     queryFn: () =>
       api.getTransactions(selectedWarehouse, {
         transaction_type: "RESTOCK",
         page: currentPage,
         page_size: pageSize,
+        brand: brand === "all" ? undefined : brand,
       }),
     enabled: !!selectedWarehouse,
   });
@@ -198,21 +201,26 @@ export default function PurchasesHistoryPage() {
           </p>
         </div>
 
-        {/* Warehouse selector */}
-        {warehouses && (
-          <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
-            <SelectTrigger className="w-full sm:w-[200px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
-              <SelectValue placeholder="Select warehouse" />
-            </SelectTrigger>
-            <SelectContent>
-              {warehouses.map((wh) => (
-                <SelectItem key={wh.id} value={wh.id}>
-                  {wh.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex gap-3 items-center flex-wrap">
+          {/* Brand Filter */}
+          <BrandFilter value={brand} onChange={setBrand} />
+
+          {/* Warehouse selector */}
+          {warehouses && (
+            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+              <SelectTrigger className="w-full sm:w-[200px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
+                <SelectValue placeholder="Select warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((wh) => (
+                  <SelectItem key={wh.id} value={wh.id}>
+                    {wh.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </motion.div>
 
       {/* Stats Cards */}

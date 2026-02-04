@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BrandFilter } from "@/components/ui/brand-filter";
 
 interface Warehouse {
   id: string;
@@ -77,6 +78,7 @@ export default function HistoryPage() {
 
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [brand, setBrand] = useState<string>("all");
 
   // Fetch warehouses (for admin dropdown)
   const { data: warehouses } = useQuery<Warehouse[]>({
@@ -100,11 +102,13 @@ export default function HistoryPage() {
       "transactions",
       selectedWarehouse,
       typeFilter === "all" ? undefined : typeFilter,
+      brand,
     ],
     queryFn: () =>
       api.getTransactions(selectedWarehouse, {
         transaction_type: typeFilter === "all" ? undefined : typeFilter,
         page_size: 50,
+        brand: brand === "all" ? undefined : brand,
       }),
     enabled: !!selectedWarehouse,
   });
@@ -143,6 +147,9 @@ export default function HistoryPage() {
               <SelectItem value="ADJUSTMENT">Adjustments</SelectItem>
             </SelectContent>
           </Select>
+
+          {/* Brand filter */}
+          <BrandFilter value={brand} onChange={setBrand} />
 
           {/* Warehouse selector (admin only) */}
           {isAdmin && warehouses && (

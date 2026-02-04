@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { BrandFilter } from "@/components/ui/brand-filter";
 import { toast } from "sonner";
 
 interface Warehouse {
@@ -50,6 +51,7 @@ export default function TransfersPage() {
   const [productId, setProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");
   const [note, setNote] = useState<string>("");
+  const [brand, setBrand] = useState<string>("all");
 
   // Fetch warehouses
   const { data: warehouses } = useQuery<Warehouse[]>({
@@ -215,6 +217,17 @@ export default function TransfersPage() {
               </Select>
             </div>
 
+            {/* Brand Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Filter by Brand
+              </label>
+              <BrandFilter value={brand} onChange={(val) => {
+                setBrand(val);
+                setProductId(""); // Reset product when brand changes
+              }} />
+            </div>
+
             {/* Product */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -235,11 +248,13 @@ export default function TransfersPage() {
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {sourceInventory?.items.map((item) => (
-                    <SelectItem key={item.product_id} value={item.product_id}>
-                      {item.product.name} ({item.quantity_on_hand} available)
-                    </SelectItem>
-                  ))}
+                  {sourceInventory?.items
+                    .filter((item) => brand === "all" || item.product.brand === brand)
+                    .map((item) => (
+                      <SelectItem key={item.product_id} value={item.product_id}>
+                        {item.product.name} ({item.quantity_on_hand} available)
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               {selectedProduct && (

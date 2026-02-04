@@ -243,6 +243,11 @@ class TransactionListResponse(BaseModel):
 # GENERIC RESPONSES
 # ============================================
 
+class BrandsResponse(BaseModel):
+    """List of unique brand names."""
+    brands: List[str]
+
+
 class MessageResponse(BaseModel):
     """Simple message response."""
     message: str

@@ -50,12 +50,13 @@ export const api = {
   // Inventory
   async getInventory(
     warehouseId: string,
-    options?: { page?: number; limit?: number; search?: string }
+    options?: { page?: number; limit?: number; search?: string; brand?: string }
   ) {
     const params = new URLSearchParams();
     if (options?.page) params.set("page", options.page.toString());
     if (options?.limit) params.set("page_size", options.limit.toString());
     if (options?.search) params.set("search", options.search);
+    if (options?.brand) params.set("brand", options.brand);
 
     const query = params.toString() ? `?${params.toString()}` : "";
     const res = await fetchWithAuth(`/api/inventory/${warehouseId}${query}`);
@@ -80,6 +81,14 @@ export const api = {
     const res = await fetchWithAuth(`/api/warehouses/${warehouseId}`);
     if (!res.ok) throw new Error("Failed to fetch warehouse");
     return res.json();
+  },
+
+  // Brands
+  async getBrands(): Promise<string[]> {
+    const res = await fetchWithAuth("/api/brands");
+    if (!res.ok) throw new Error("Failed to fetch brands");
+    const data = await res.json();
+    return data.brands; // Backend returns { brands: [...] }
   },
 
   // Transfers
@@ -144,6 +153,7 @@ export const api = {
     warehouseId: string,
     options?: {
       transaction_type?: string;
+      brand?: string;
       page?: number;
       page_size?: number;
     }
@@ -151,6 +161,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.transaction_type)
       params.set("transaction_type", options.transaction_type);
+    if (options?.brand) params.set("brand", options.brand);
     if (options?.page) params.set("page", options.page.toString());
     if (options?.page_size)
       params.set("page_size", options.page_size.toString());

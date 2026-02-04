@@ -2,9 +2,9 @@
 Inventory API routes.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from supabase import Client
-from typing import List
+from typing import List, Optional
 
 from app.core.auth import get_current_user, get_supabase_client, UserContext
 from app.models.schemas import (
@@ -22,16 +22,18 @@ async def get_warehouse_inventory(
     warehouse_id: str,
     page: int = 1,
     page_size: int = 50,
-    search: str = None,
+    search: Optional[str] = None,
+    brand: Optional[str] = Query(None, description="Filter by product brand"),
     user: UserContext = Depends(get_current_user),
     supabase: Client = Depends(get_supabase_client),
 ) -> InventoryListResponse:
     """
-    Get inventory for a specific warehouse with pagination and search.
-    
+    Get inventory for a specific warehouse with pagination, search, and brand filter.
+
     - Partners can only view their own warehouse
     - Admins can view any warehouse
-    
+    - search and brand filters combine (intersection) when both provided
+
     Returns:
         InventoryListResponse: Paginated list of inventory items.
     """
@@ -53,18 +55,31 @@ async def get_warehouse_inventory(
     
     warehouse = warehouse_response.data
     
-    # If search is provided, first find matching product IDs
+    # Pre-filter: collect product IDs matching search and/or brand.
+    # Both filters narrow independently; when both are present the result
+    # is their intersection (only products that match search AND brand).
     product_ids = None
+
     if search:
-        # Search products by SKU or name
         search_term = f"%{search}%"
-        products_response = supabase.table("products")\
+        search_response = supabase.table("products")\
             .select("id")\
             .or_(f"sku.ilike.{search_term},name.ilike.{search_term},brand.ilike.{search_term}")\
             .execute()
-        product_ids = [p["id"] for p in (products_response.data or [])]
+        product_ids = set(p["id"] for p in (search_response.data or []))
 
-        # If no products match, return empty result early
+    if brand:
+        brand_response = supabase.table("products")\
+            .select("id")\
+            .eq("brand", brand)\
+            .execute()
+        brand_ids = set(p["id"] for p in (brand_response.data or []))
+        # Intersect with search results if search was also applied
+        product_ids = brand_ids if product_ids is None else product_ids & brand_ids
+
+    # Convert to list for the .in_() call; keep None when no filter was applied
+    if product_ids is not None:
+        product_ids = list(product_ids)
         if not product_ids:
             return InventoryListResponse(
                 warehouse_id=warehouse_id,

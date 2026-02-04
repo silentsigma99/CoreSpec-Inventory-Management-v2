@@ -17,6 +17,7 @@ from app.api.warehouses import router as warehouses_router
 from app.api.transfers import router as transfers_router
 from app.api.sales import router as sales_router
 from app.api.purchases import router as purchases_router
+from app.api.products import router as products_router
 from app.api.transactions import router as transactions_router
 
 # Create FastAPI app
@@ -47,6 +48,7 @@ app.include_router(warehouses_router)
 app.include_router(transfers_router)
 app.include_router(sales_router)
 app.include_router(purchases_router)
+app.include_router(products_router)
 app.include_router(transactions_router)
 
 

@@ -34,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BrandFilter } from "@/components/ui/brand-filter";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ChevronLeft } from "lucide-react";
 
@@ -78,6 +79,7 @@ export default function InventoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [brand, setBrand] = useState<string>("all");
   const pageSize = 50;
 
   // Debounce search
@@ -88,6 +90,11 @@ export default function InventoryPage() {
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Reset to page 1 when brand filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [brand]);
 
   // Quick-sell state
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -120,11 +127,12 @@ export default function InventoryPage() {
     isLoading,
     error,
   } = useQuery<InventoryResponse>({
-    queryKey: ["inventory", selectedWarehouse, currentPage, debouncedSearch],
+    queryKey: ["inventory", selectedWarehouse, currentPage, debouncedSearch, brand],
     queryFn: () => api.getInventory(selectedWarehouse, {
       page: currentPage,
       limit: pageSize,
-      search: debouncedSearch
+      search: debouncedSearch,
+      brand: brand === "all" ? undefined : brand,
     }),
     enabled: !!selectedWarehouse,
   });
@@ -289,7 +297,7 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        <div className="flex gap-4 items-center">
+        <div className="flex gap-4 items-center flex-wrap">
           {/* Search Input */}
           <div className="relative">
             <Input
@@ -299,6 +307,9 @@ export default function InventoryPage() {
               className="w-full sm:w-[250px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
             />
           </div>
+
+          {/* Brand Filter */}
+          <BrandFilter value={brand} onChange={setBrand} />
 
           {/* Warehouse selector (admin only) */}
           {isAdmin && warehouses && (
