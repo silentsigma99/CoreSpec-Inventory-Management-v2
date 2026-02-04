@@ -30,15 +30,14 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 # CSV file path (relative to backend directory)
 CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "docs",
-    "Gemini Export 31 January 2026 at 23_19_15 GMT+5 - Gemini Export 31 January 2026 at 23_19_15 GMT+5.csv"
+    "Gemini Export 4 February 2026 at 16_11_20 GMT+5 - Gemini Export 4 February 2026 at 16_11_20 GMT+5.csv"
 )
 
 # Main Warehouse UUID (from seed.sql)
 MAIN_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000001"
 
 # Purchase date from user
-PURCHASE_DATE = "November 29, 2025"
+PURCHASE_DATE = "January 31, 2026"
 
 
 def normalize_sku(sku: str) -> str:
