@@ -9,7 +9,7 @@
 ,,,,,
 ,,,,,
 ,,,,,
-,,,Product Code,Product Name,Stock Balance
+,,,Product Code,Product Name,Quantity
 ,,,WAC-301,CG Yellow XXX Paste Wax Jar (8oz),0
 ,,,CG-BLUE-APP,CG Blue Applicator,0
 ,,,ACC-130,CG Spray Bottles Professional Chemical Resistant Heavy Duty (32oz),1
@@ -73,4 +73,5 @@
 ,,,10CQL15,CP C.Quartz Lite (100ml) {9 Months + Life},1
 ,,,10cqk100,CP C. Quartz UK 3.0 (100ml) {2 Years + Life},1
 ,,,DL5,CP Dlight Anti UV Coating (50ml) {3 Years + Life},1
+
 ,,,,63,57
