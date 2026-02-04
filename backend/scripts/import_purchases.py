@@ -1,6 +1,10 @@
 """
-One-time script to import historical purchases from CSV.
-Run from backend directory: python scripts/import_purchases.py
+Import purchases from CSV file.
+Run from backend directory: python scripts/import_purchases.py <csv_file> [purchase_date]
+
+Examples:
+  python scripts/import_purchases.py "../purchases.csv" "January 31, 2026"
+  python scripts/import_purchases.py "../Gemini Export.csv"
 
 This script will:
 1. Read the CSV file with purchase data
@@ -27,17 +31,8 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
-# CSV file path (relative to backend directory)
-CSV_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "Gemini Export 4 February 2026 at 16_11_20 GMT+5 - Gemini Export 4 February 2026 at 16_11_20 GMT+5.csv"
-)
-
 # Main Warehouse UUID (from seed.sql)
 MAIN_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000001"
-
-# Purchase date from user
-PURCHASE_DATE = "January 31, 2026"
 
 
 def normalize_sku(sku: str) -> str:
@@ -66,6 +61,26 @@ def create_sku_variations(sku: str) -> list[str]:
 
 
 def main():
+    # Parse command line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/import_purchases.py <csv_file> [purchase_date]")
+        print()
+        print("Arguments:")
+        print("  csv_file      Path to CSV file (required)")
+        print("  purchase_date Date for reference note (optional, defaults to today)")
+        print()
+        print("Examples:")
+        print('  python scripts/import_purchases.py "../purchases.csv" "January 31, 2026"')
+        print('  python scripts/import_purchases.py "../Gemini Export.csv"')
+        sys.exit(1)
+
+    csv_path = sys.argv[1]
+    purchase_date = sys.argv[2] if len(sys.argv) > 2 else datetime.now().strftime("%B %d, %Y")
+
+    # Handle relative paths
+    if not os.path.isabs(csv_path):
+        csv_path = os.path.join(os.getcwd(), csv_path)
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment")
         sys.exit(1)
@@ -88,19 +103,20 @@ def main():
         products_by_sku[normalize_sku(p["sku"]).replace("-", "")] = p
 
     print(f"Loaded {len(products_response.data)} products from database")
-    print(f"CSV file: {CSV_PATH}")
+    print(f"CSV file: {csv_path}")
+    print(f"Purchase date: {purchase_date}")
     print()
 
     # Read CSV
-    if not os.path.exists(CSV_PATH):
-        print(f"ERROR: CSV file not found at {CSV_PATH}")
+    if not os.path.exists(csv_path):
+        print(f"ERROR: CSV file not found at {csv_path}")
         sys.exit(1)
 
     imported = 0
     skipped = []
     errors = []
 
-    with open(CSV_PATH, "r", encoding="utf-8") as f:
+    with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is row 1)
@@ -163,7 +179,7 @@ def main():
                     "to_warehouse_id": MAIN_WAREHOUSE_ID,
                     "quantity": quantity,
                     "unit_price": product.get("cost_price"),  # Use product cost
-                    "reference_note": f"Purchase: {PURCHASE_DATE} - {description}",
+                    "reference_note": f"Purchase: {purchase_date} - {description}",
                 }).execute()
 
                 imported += 1

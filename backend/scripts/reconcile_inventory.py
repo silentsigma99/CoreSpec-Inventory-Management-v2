@@ -1,6 +1,10 @@
 """
 Reconciliation script to add discovered inventory from CSV.
-Run from backend directory: python scripts/reconcile_inventory.py
+Run from backend directory: python scripts/reconcile_inventory.py <csv_file> [reference_note]
+
+Examples:
+  python scripts/reconcile_inventory.py "../inventory.csv" "December 2025 Reconciliation"
+  python scripts/reconcile_inventory.py "../CoreSpec Inventory.csv"
 
 This script will:
 1. Read the CSV file with inventory data
@@ -13,6 +17,7 @@ This script will:
 import csv
 import os
 import sys
+from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,17 +31,8 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
-# CSV file path
-CSV_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "CoreSpec Inventory - December - Sheet1.csv"
-)
-
 # Main Warehouse UUID (from seed.sql)
 MAIN_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000001"
-
-# Reference note for transactions
-REFERENCE_NOTE = "December 2025 Reconciliation"
 
 
 def normalize_sku(sku: str) -> str:
@@ -97,6 +93,26 @@ def parse_csv(csv_path: str) -> list[dict]:
 
 
 def main():
+    # Parse command line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/reconcile_inventory.py <csv_file> [reference_note]")
+        print()
+        print("Arguments:")
+        print("  csv_file       Path to CSV file (required)")
+        print("  reference_note Note for transactions (optional, defaults to date)")
+        print()
+        print("Examples:")
+        print('  python scripts/reconcile_inventory.py "../inventory.csv" "December 2025 Reconciliation"')
+        print('  python scripts/reconcile_inventory.py "../CoreSpec Inventory.csv"')
+        sys.exit(1)
+
+    csv_path = sys.argv[1]
+    reference_note = sys.argv[2] if len(sys.argv) > 2 else f"Reconciliation {datetime.now().strftime('%B %Y')}"
+
+    # Handle relative paths
+    if not os.path.isabs(csv_path):
+        csv_path = os.path.join(os.getcwd(), csv_path)
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment")
         sys.exit(1)
@@ -118,15 +134,16 @@ def main():
         products_by_sku[normalize_sku(p["sku"]).replace("-", "")] = p
 
     print(f"Loaded {len(products_response.data)} products from database")
-    print(f"CSV file: {CSV_PATH}")
+    print(f"CSV file: {csv_path}")
+    print(f"Reference note: {reference_note}")
     print()
 
     # Parse CSV
-    if not os.path.exists(CSV_PATH):
-        print(f"ERROR: CSV file not found at {CSV_PATH}")
+    if not os.path.exists(csv_path):
+        print(f"ERROR: CSV file not found at {csv_path}")
         sys.exit(1)
 
-    items = parse_csv(CSV_PATH)
+    items = parse_csv(csv_path)
     print(f"Found {len(items)} items with qty > 0 in CSV")
     print()
 
@@ -189,7 +206,7 @@ def main():
                 "from_warehouse_id": None,
                 "to_warehouse_id": MAIN_WAREHOUSE_ID,
                 "quantity": quantity,
-                "reference_note": REFERENCE_NOTE,
+                "reference_note": reference_note,
             }).execute()
 
             reconciled += 1
