@@ -77,24 +77,28 @@ async def get_current_user(
     
     # Fetch user profile and warehouse from database
     try:
-        # Get profile with role
-        profile_response = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-        profile = profile_response.data
-        
+        # Get profile with role (use execute() instead of single() to avoid exception on no rows)
+        profile_response = supabase.table("profiles").select("*").eq("id", user_id).execute()
+        profile = profile_response.data[0] if profile_response.data else None
+
+        # Auto-create profile if it doesn't exist (handles users created before trigger)
         if not profile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User profile not found",
-            )
-        
+            new_profile = {
+                "id": user_id,
+                "role": "partner",
+                "full_name": email,
+            }
+            supabase.table("profiles").insert(new_profile).execute()
+            profile = new_profile
+
         role = profile.get("role", "partner")
         
         # Get warehouse if user is a partner
         warehouse_id = None
         if role == "partner":
-            warehouse_response = supabase.table("warehouses").select("id").eq("manager_id", user_id).single().execute()
+            warehouse_response = supabase.table("warehouses").select("id").eq("manager_id", user_id).execute()
             if warehouse_response.data:
-                warehouse_id = warehouse_response.data.get("id")
+                warehouse_id = warehouse_response.data[0].get("id")
         
         return UserContext(
             user_id=user_id,
