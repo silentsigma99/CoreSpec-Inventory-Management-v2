@@ -1,1 +1,0 @@
-# CoreSpec Inventory API

@@ -1,36 +1,25 @@
 /**
- * API client for communicating with the FastAPI backend.
+ * API client for communicating with Next.js API routes.
+ * Uses relative paths - auth handled via cookies (same-origin).
  */
-
-import { getSupabaseClient } from "./supabase";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
- * Make an authenticated API request.
+ * Make an API request. Auth is handled via cookies automatically.
  */
-async function fetchWithAuth(
+async function fetchApi(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const supabase = getSupabaseClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...options.headers,
   };
 
-  if (session?.access_token) {
-    (headers as Record<string, string>)["Authorization"] =
-      `Bearer ${session.access_token}`;
-  }
-
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  // Use relative URL - same-origin request, cookies sent automatically
+  const response = await fetch(endpoint, {
     ...options,
     headers,
+    credentials: "same-origin",
   });
 
   return response;
@@ -42,7 +31,7 @@ async function fetchWithAuth(
 export const api = {
   // Auth
   async getMe() {
-    const res = await fetchWithAuth("/api/me");
+    const res = await fetchApi("/api/me");
     if (!res.ok) throw new Error("Failed to fetch user profile");
     return res.json();
   },
@@ -59,36 +48,36 @@ export const api = {
     if (options?.brand) params.set("brand", options.brand);
 
     const query = params.toString() ? `?${params.toString()}` : "";
-    const res = await fetchWithAuth(`/api/inventory/${warehouseId}${query}`);
+    const res = await fetchApi(`/api/inventory/${warehouseId}${query}`);
     if (!res.ok) throw new Error("Failed to fetch inventory");
     return res.json();
   },
 
   async getAllInventory() {
-    const res = await fetchWithAuth("/api/inventory/");
+    const res = await fetchApi("/api/inventory");
     if (!res.ok) throw new Error("Failed to fetch inventory");
     return res.json();
   },
 
   // Warehouses
   async getWarehouses() {
-    const res = await fetchWithAuth("/api/warehouses/");
+    const res = await fetchApi("/api/warehouses");
     if (!res.ok) throw new Error("Failed to fetch warehouses");
     return res.json();
   },
 
   async getWarehouse(warehouseId: string) {
-    const res = await fetchWithAuth(`/api/warehouses/${warehouseId}`);
+    const res = await fetchApi(`/api/warehouses/${warehouseId}`);
     if (!res.ok) throw new Error("Failed to fetch warehouse");
     return res.json();
   },
 
   // Brands
   async getBrands(): Promise<string[]> {
-    const res = await fetchWithAuth("/api/brands");
+    const res = await fetchApi("/api/brands");
     if (!res.ok) throw new Error("Failed to fetch brands");
     const data = await res.json();
-    return data.brands; // Backend returns { brands: [...] }
+    return data.brands;
   },
 
   // Transfers
@@ -99,7 +88,7 @@ export const api = {
     quantity: number;
     reference_note?: string;
   }) {
-    const res = await fetchWithAuth("/api/transfers/", {
+    const res = await fetchApi("/api/transfers", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -115,10 +104,10 @@ export const api = {
     warehouse_id: string;
     product_id: string;
     quantity: number;
-    unit_price?: number;  // Optional: actual sale price (defaults to retail_price)
+    unit_price?: number;
     reference_note?: string;
   }) {
-    const res = await fetchWithAuth("/api/sales/", {
+    const res = await fetchApi("/api/sales", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -134,10 +123,10 @@ export const api = {
     warehouse_id: string;
     product_id: string;
     quantity: number;
-    unit_cost?: number;  // Optional: cost per unit (defaults to product cost_price)
+    unit_cost?: number;
     reference_note?: string;
   }) {
-    const res = await fetchWithAuth("/api/purchases/", {
+    const res = await fetchApi("/api/purchases", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -167,7 +156,7 @@ export const api = {
       params.set("page_size", options.page_size.toString());
 
     const query = params.toString() ? `?${params.toString()}` : "";
-    const res = await fetchWithAuth(`/api/transactions/${warehouseId}${query}`);
+    const res = await fetchApi(`/api/transactions/${warehouseId}${query}`);
     if (!res.ok) throw new Error("Failed to fetch transactions");
     return res.json();
   },

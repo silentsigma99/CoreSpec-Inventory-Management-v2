@@ -16,13 +16,18 @@ npm run build    # Production build
 npm run lint     # ESLint
 ```
 
-### Backend (FastAPI)
+### CLI Scripts (Python)
 ```bash
-cd backend
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload  # API on localhost:8000
-python verify_data.py      # Test Supabase connectivity
+# Install dependencies (one-time)
+pip install -r scripts/requirements.txt
+
+# Create scripts/.env with SUPABASE_URL and SUPABASE_SERVICE_KEY
+
+# Run scripts from project root
+python scripts/verify_data.py                    # Test Supabase connectivity
+python scripts/audit_inventory.py                # Audit database inventory
+python scripts/import_purchases.py "./file.csv"  # Import purchases from CSV
+python scripts/reconcile_inventory.py "./file.csv" "Note"  # Add inventory adjustments
 ```
 
 ### Database
@@ -33,18 +38,32 @@ Migrations in `database/migrations/` run in order (001-006) against Supabase SQL
 ```
 frontend/           # Next.js 14 App Router + TypeScript + Tailwind + shadcn/ui
   src/
-    app/            # Pages (login, dashboard routes in (dashboard)/)
+    app/
+      api/          # API routes (all backend logic lives here)
+        me/         # GET - current user profile
+        brands/     # GET - list of brands
+        warehouses/ # GET - list warehouses, GET [id] - single warehouse
+        inventory/  # GET - all inventory, GET [id] - warehouse inventory
+        sales/      # POST - record sale
+        purchases/  # POST - record purchase
+        transfers/  # POST - transfer stock
+        transactions/  # GET [id] - transaction history
+      (dashboard)/  # Protected dashboard pages
+      login/        # Login page
     components/     # ui/ (shadcn), layout/ (Header, Sidebar, MobileNav)
     context/        # AuthContext, QueryProvider (TanStack Query)
-    lib/            # api.ts (typed client), supabase.ts, utils.ts
+    lib/
+      api.ts        # Typed API client (uses relative paths)
+      supabase.ts   # Browser Supabase client
+      supabase-server.ts  # Server Supabase client + auth utilities
     middleware.ts   # Route protection
 
-backend/            # FastAPI + Supabase
-  main.py           # App init, CORS, router registration
-  app/
-    api/            # Route handlers (auth, inventory, warehouses, transfers, sales, transactions)
-    core/           # config.py (settings), auth.py (JWT verification)
-    models/         # schemas.py (Pydantic models)
+scripts/            # Python CLI tools (admin scripts)
+  audit_inventory.py
+  reconcile_inventory.py
+  import_purchases.py
+  verify_data.py
+  requirements.txt
 
 database/           # PostgreSQL via Supabase
   migrations/       # Schema + RLS policies
@@ -53,9 +72,9 @@ database/           # PostgreSQL via Supabase
 
 ## Key Patterns
 
-**Authentication:** Supabase Auth with JWT tokens. Backend verifies via `supabase.auth.get_user(token)` (not manual decode - Supabase uses ES256).
+**Authentication:** Supabase Auth with session cookies. API routes verify via `supabase.auth.getUser()` from cookies (same-origin, no manual token handling needed).
 
-**Access Control:** Role-based (admin sees all warehouses, partner sees assigned only). Enforced by RLS policies in database.
+**Access Control:** Role-based (admin sees all warehouses, partner sees assigned only). Enforced by RLS policies in database + API route checks.
 
 **Data Integrity:** Every stock change creates a transaction record. Atomic transfers create paired TRANSFER_OUT/TRANSFER_IN entries. Inventory quantity >= 0 enforced by CHECK constraint.
 
@@ -65,14 +84,20 @@ database/           # PostgreSQL via Supabase
 
 ## API Endpoints
 
+All API routes are in `frontend/src/app/api/`. Same-origin requests - cookies sent automatically.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/me` | GET | Current user profile |
-| `/api/inventory/{warehouse_id}` | GET | Stock list (supports `page`, `page_size`, `search` params) |
-| `/api/warehouses` | GET | All warehouses |
-| `/api/transfers` | POST | Transfer stock between warehouses |
+| `/api/brands` | GET | List of product brands |
+| `/api/warehouses` | GET | All warehouses (role-filtered) |
+| `/api/warehouses/{id}` | GET | Single warehouse |
+| `/api/inventory` | GET | All inventory (role-filtered) |
+| `/api/inventory/{warehouse_id}` | GET | Warehouse inventory (pagination, search, brand filter) |
 | `/api/sales` | POST | Record sale with unit price |
-| `/api/transactions/{warehouse_id}` | GET | Transaction history |
+| `/api/purchases` | POST | Record purchase (admin only) |
+| `/api/transfers` | POST | Transfer stock between warehouses (admin only) |
+| `/api/transactions/{warehouse_id}` | GET | Transaction history (pagination, filters) |
 
 ## Database Schema
 
@@ -82,28 +107,48 @@ Core tables: `profiles` (extends auth.users), `products` (catalog), `warehouses`
 
 | Problem | Solution |
 |---------|----------|
-| JWT validation fails | Use `supabase.auth.get_user(token)`, not manual decode |
+| Auth fails in API route | Check `supabase-server.ts` is using correct env vars |
 | `.single()` throws on no rows | Use `.execute()` and check `data[0]` |
-| Blank page after login | Profile missing in DB - check `profiles` table has user entry; backend auto-creates if missing |
-| Wrong Supabase key type | Backend needs `sb_secret_...` not `sb_publishable_...` |
+| Blank page after login | Profile missing in DB - API auto-creates if missing |
+| Wrong Supabase key type | Server needs `SUPABASE_SERVICE_KEY` (sb_secret_...) |
 | Turbopack cache corrupt | `rm -rf frontend/.next` |
-| Backend changes not reloading | Restart: `pkill -f uvicorn` (paths with spaces break file watcher) |
-| Port in use | `lsof -i :3000` or `:8000`, then `kill <PID>` |
+| Port in use | `lsof -i :3000`, then `kill <PID>` |
 
 ## Environment Variables
 
-Frontend (`frontend/.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`
+**Frontend (`frontend/.env.local`):**
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
+SUPABASE_SERVICE_KEY=sb_secret_...  # Server-side only, not exposed to browser
+```
 
-Backend (`backend/.env`): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `DATABASE_URL`, `FRONTEND_URL`
+**CLI Scripts (`scripts/.env`):**
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=sb_secret_...
+```
 
 **Supabase API Keys (New Format as of Nov 2025):**
 | Old (Legacy) | New | Use |
 |--------------|-----|-----|
-| `anon` key (eyJ...) | `sb_publishable_...` | Frontend only |
-| `service_role` key (eyJ...) | `sb_secret_...` | Backend only (bypasses RLS) |
+| `anon` key (eyJ...) | `sb_publishable_...` | Frontend/browser |
+| `service_role` key (eyJ...) | `sb_secret_...` | Server-side only (bypasses RLS) |
 
 - Never expose `sb_secret_...` keys in frontend code
 - Secret keys cannot be used in browsers (blocked by User-Agent check)
-- Create/manage keys in Supabase Dashboard → Project Settings → API
+- Create/manage keys in Supabase Dashboard -> Project Settings -> API
 
 See `docs/TROUBLESHOOTING.md` for detailed debugging guide.
+
+## Deployment (Vercel)
+
+Single Vercel project - API routes are built into Next.js.
+
+1. Connect repo to Vercel
+2. Set root directory to `frontend`
+3. Framework auto-detected as Next.js
+4. Add environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_KEY` (for API routes)
