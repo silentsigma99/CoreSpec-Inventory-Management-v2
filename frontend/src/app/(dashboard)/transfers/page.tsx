@@ -59,10 +59,10 @@ export default function TransfersPage() {
     queryFn: () => api.getWarehouses(),
   });
 
-  // Fetch source inventory
+  // Fetch source inventory (get all items for dropdown)
   const { data: sourceInventory } = useQuery<InventoryResponse>({
-    queryKey: ["inventory", fromWarehouse],
-    queryFn: () => api.getInventory(fromWarehouse),
+    queryKey: ["inventory", fromWarehouse, "all"],
+    queryFn: () => api.getInventory(fromWarehouse, { limit: 1000 }),
     enabled: !!fromWarehouse,
   });
 
@@ -249,6 +249,7 @@ export default function TransfersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {sourceInventory?.items
+                    .filter((item) => item.quantity_on_hand >= 1)
                     .filter((item) => brand === "all" || item.product.brand === brand)
                     .map((item) => (
                       <SelectItem key={item.product_id} value={item.product_id}>
