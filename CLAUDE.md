@@ -84,6 +84,8 @@ Core tables: `profiles` (extends auth.users), `products` (catalog), `warehouses`
 |---------|----------|
 | JWT validation fails | Use `supabase.auth.get_user(token)`, not manual decode |
 | `.single()` throws on no rows | Use `.execute()` and check `data[0]` |
+| Blank page after login | Profile missing in DB - check `profiles` table has user entry; backend auto-creates if missing |
+| Wrong Supabase key type | Backend needs `sb_secret_...` not `sb_publishable_...` |
 | Turbopack cache corrupt | `rm -rf frontend/.next` |
 | Backend changes not reloading | Restart: `pkill -f uvicorn` (paths with spaces break file watcher) |
 | Port in use | `lsof -i :3000` or `:8000`, then `kill <PID>` |
@@ -93,5 +95,15 @@ Core tables: `profiles` (extends auth.users), `products` (catalog), `warehouses`
 Frontend (`frontend/.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`
 
 Backend (`backend/.env`): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `DATABASE_URL`, `FRONTEND_URL`
+
+**Supabase API Keys (New Format as of Nov 2025):**
+| Old (Legacy) | New | Use |
+|--------------|-----|-----|
+| `anon` key (eyJ...) | `sb_publishable_...` | Frontend only |
+| `service_role` key (eyJ...) | `sb_secret_...` | Backend only (bypasses RLS) |
+
+- Never expose `sb_secret_...` keys in frontend code
+- Secret keys cannot be used in browsers (blocked by User-Agent check)
+- Create/manage keys in Supabase Dashboard → Project Settings → API
 
 See `docs/TROUBLESHOOTING.md` for detailed debugging guide.
