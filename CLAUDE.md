@@ -141,14 +141,20 @@ SUPABASE_SERVICE_KEY=sb_secret_...
 
 See `docs/TROUBLESHOOTING.md` for detailed debugging guide.
 
-## Deployment (Vercel)
+## Deployment (Railway)
 
-Single Vercel project - API routes are built into Next.js.
+Single Railway service - API routes are built into Next.js.
 
-1. Connect repo to Vercel
-2. Set root directory to `frontend`
-3. Framework auto-detected as Next.js
-4. Add environment variables:
+1. Create new project on Railway
+2. Connect GitHub repo
+3. Set root directory to `frontend`
+4. Railway auto-detects Next.js via `railway.toml` and `nixpacks.toml`
+5. Add environment variables in Railway dashboard:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_KEY` (for API routes)
+6. Deploy - Railway will run `npm run build` then `npm start`
+
+**Config Files:**
+- `railway.toml` - Railway deployment config
+- `nixpacks.toml` - Build process config (Node.js 20)
