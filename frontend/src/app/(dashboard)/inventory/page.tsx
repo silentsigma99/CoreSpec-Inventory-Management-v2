@@ -18,14 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from "@/components/ui/sheet";
-import {
   Table,
   TableBody,
   TableCell,
@@ -99,7 +91,6 @@ export default function InventoryPage() {
 
   // Quick-sell state
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-  const [mobileSheetItem, setMobileSheetItem] = useState<InventoryItem | null>(null);
   const [sellQuantity, setSellQuantity] = useState<string>("1");
   const [sellPrice, setSellPrice] = useState<string>("");
   const [sellNote, setSellNote] = useState<string>("");
@@ -167,7 +158,6 @@ export default function InventoryPage() {
       toast.success(`Sale recorded! New stock: ${data.new_stock_level} units`);
       resetSellForm();
       setExpandedRowId(null);
-      setMobileSheetItem(null);
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
@@ -189,7 +179,6 @@ export default function InventoryPage() {
       toast.success("Transfer completed successfully");
       resetTransferForm();
       setExpandedRowId(null);
-      setMobileSheetItem(null);
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
@@ -210,13 +199,17 @@ export default function InventoryPage() {
     setTransferNote("");
   };
 
-  const handleRowClick = (item: InventoryItem, isMobile: boolean) => {
+  const handleRowClick = (item: InventoryItem) => {
     if (item.quantity_on_hand <= 0) {
       toast.error(showTransferUI ? "No stock available to transfer" : "No stock available to sell");
       return;
     }
 
-    if (isMobile) {
+    if (expandedRowId === item.id) {
+      setExpandedRowId(null);
+      resetSellForm();
+      resetTransferForm();
+    } else {
       if (showTransferUI) {
         setTransferQuantity("1");
         setTransferDestination(partnerWarehouses[0]?.id ?? "");
@@ -226,25 +219,7 @@ export default function InventoryPage() {
         setSellQuantity("1");
         setSellNote("");
       }
-      setMobileSheetItem(item);
-      setExpandedRowId(null);
-    } else {
-      if (expandedRowId === item.id) {
-        setExpandedRowId(null);
-        resetSellForm();
-        resetTransferForm();
-      } else {
-        if (showTransferUI) {
-          setTransferQuantity("1");
-          setTransferDestination(partnerWarehouses[0]?.id ?? "");
-          setTransferNote("");
-        } else {
-          setSellPrice(item.product.retail_price?.toString() || "");
-          setSellQuantity("1");
-          setSellNote("");
-        }
-        setExpandedRowId(item.id);
-      }
+      setExpandedRowId(item.id);
     }
   };
 
@@ -295,7 +270,6 @@ export default function InventoryPage() {
 
   const handleCancel = () => {
     setExpandedRowId(null);
-    setMobileSheetItem(null);
     resetSellForm();
     resetTransferForm();
   };
@@ -427,10 +401,11 @@ export default function InventoryPage() {
         </Card>
       </motion.div>
 
-      {/* Desktop Table View */}
-      <motion.div variants={itemVariants} className="hidden md:block">
-        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
-          <Table>
+      {/* Table View (all breakpoints) */}
+      <motion.div variants={itemVariants}>
+        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B] overflow-hidden">
+          <div className="overflow-x-auto">
+          <Table className="min-w-[700px]">
             <TableHeader>
               <TableRow className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50">
                 <TableHead className="text-zinc-600 dark:text-zinc-400 w-8"></TableHead>
@@ -487,7 +462,7 @@ export default function InventoryPage() {
                           ? "cursor-pointer hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
                           : "opacity-60"
                           } ${isExpanded ? "bg-zinc-100/50 dark:bg-zinc-800/50" : ""}`}
-                        onClick={() => hasStock && handleRowClick(item, false)}
+                        onClick={() => hasStock && handleRowClick(item)}
                       >
                         {/* Expand indicator */}
                         <TableCell className="w-8">
@@ -541,48 +516,50 @@ export default function InventoryPage() {
                                 transition={{ duration: 0.3, ease: "easeInOut" }}
                                 className="overflow-hidden"
                               >
-                                <div className="p-6">
+                                <div className="p-4 sm:p-6">
                                   {showTransferUI ? (
-                                    <div className="flex items-start gap-6">
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
-                                          Destination
-                                        </label>
-                                        <Select
-                                          value={transferDestination}
-                                          onValueChange={setTransferDestination}
-                                        >
-                                          <SelectTrigger
-                                            className="w-[180px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                            onClick={(e) => e.stopPropagation()}
+                                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                                      <div className="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:gap-4">
+                                        <div className="space-y-2">
+                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
+                                            Destination
+                                          </label>
+                                          <Select
+                                            value={transferDestination}
+                                            onValueChange={setTransferDestination}
                                           >
-                                            <SelectValue placeholder="Select warehouse" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {partnerWarehouses.map((wh) => (
-                                              <SelectItem key={wh.id} value={wh.id}>
-                                                {wh.name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                            <SelectTrigger
+                                              className="w-full sm:w-[150px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <SelectValue placeholder="Select warehouse" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {partnerWarehouses.map((wh) => (
+                                                <SelectItem key={wh.id} value={wh.id}>
+                                                  {wh.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
+                                            Quantity
+                                          </label>
+                                          <Input
+                                            type="number"
+                                            min="1"
+                                            max={item.quantity_on_hand}
+                                            value={transferQuantity}
+                                            onChange={(e) => setTransferQuantity(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-full sm:w-20 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                          />
+                                          <p className="text-[10px] text-zinc-500 pl-1">Max: {item.quantity_on_hand}</p>
+                                        </div>
                                       </div>
                                       <div className="space-y-2">
-                                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
-                                          Quantity
-                                        </label>
-                                        <Input
-                                          type="number"
-                                          min="1"
-                                          max={item.quantity_on_hand}
-                                          value={transferQuantity}
-                                          onChange={(e) => setTransferQuantity(e.target.value)}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="w-32 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                        />
-                                        <p className="text-[10px] text-zinc-500 pl-1">Max: {item.quantity_on_hand}</p>
-                                      </div>
-                                      <div className="space-y-2 flex-1 min-w-[200px]">
                                         <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
                                           Note (optional)
                                         </label>
@@ -592,61 +569,63 @@ export default function InventoryPage() {
                                           onChange={(e) => setTransferNote(e.target.value)}
                                           onClick={(e) => e.stopPropagation()}
                                           placeholder="e.g., Transfer to CarProofing"
-                                          className="w-full bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                          className="w-full sm:w-[140px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
                                         />
                                       </div>
-                                      <div className="pt-6 flex gap-3">
+                                      <div className="flex gap-3 pt-2 sm:pt-6">
                                         <Button
                                           variant="outline"
                                           onClick={(e) => { e.stopPropagation(); handleCancel(); }}
-                                          className="border-zinc-300 dark:border-zinc-700"
+                                          className="flex-1 sm:flex-none border-zinc-300 dark:border-zinc-700"
                                         >
                                           Cancel
                                         </Button>
                                         <Button
                                           onClick={(e) => { e.stopPropagation(); handleTransferSubmit(item); }}
                                           disabled={transferMutation.isPending || !transferDestination}
-                                          className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px]"
+                                          className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white sm:min-w-[140px]"
                                         >
                                           {transferMutation.isPending ? "Processing..." : "Confirm Transfer"}
                                         </Button>
                                       </div>
                                     </div>
                                   ) : (
-                                    <div className="flex items-start gap-6">
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Quantity</label>
-                                        <Input
-                                          type="number"
-                                          min="1"
-                                          max={item.quantity_on_hand}
-                                          value={sellQuantity}
-                                          onChange={(e) => setSellQuantity(e.target.value)}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="w-32 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                        />
-                                        <p className="text-[10px] text-zinc-500 pl-1">Max: {item.quantity_on_hand}</p>
-                                      </div>
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Unit Price</label>
-                                        <div className="relative">
-                                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">PKR</span>
+                                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                                      <div className="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:gap-4">
+                                        <div className="space-y-2">
+                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Quantity</label>
                                           <Input
                                             type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={sellPrice}
-                                            onChange={(e) => setSellPrice(e.target.value)}
+                                            min="1"
+                                            max={item.quantity_on_hand}
+                                            value={sellQuantity}
+                                            onChange={(e) => setSellQuantity(e.target.value)}
                                             onClick={(e) => e.stopPropagation()}
-                                            placeholder="0.00"
-                                            className="w-40 pl-10 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                            className="w-full sm:w-20 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
                                           />
+                                          <p className="text-[10px] text-zinc-500 pl-1">Max: {item.quantity_on_hand}</p>
                                         </div>
-                                        {item.product.cost_price && (
-                                          <p className="text-[10px] text-zinc-500 pl-1">Min: <span className="text-amber-600 dark:text-amber-500">{formatCurrency(item.product.cost_price)}</span></p>
-                                        )}
+                                        <div className="space-y-2">
+                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Unit Price</label>
+                                          <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">PKR</span>
+                                            <Input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              value={sellPrice}
+                                              onChange={(e) => setSellPrice(e.target.value)}
+                                              onClick={(e) => e.stopPropagation()}
+                                              placeholder="0.00"
+                                              className="w-full sm:w-28 pl-10 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                            />
+                                          </div>
+                                          {item.product.cost_price && (
+                                            <p className="text-[10px] text-zinc-500 pl-1">Min: <span className="text-amber-600 dark:text-amber-500">{formatCurrency(item.product.cost_price)}</span></p>
+                                          )}
+                                        </div>
                                       </div>
-                                      <div className="space-y-2 flex-1 min-w-[200px]">
+                                      <div className="space-y-2">
                                         <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Customer / Note <span className="text-red-500">*</span></label>
                                         <Input
                                           type="text"
@@ -654,18 +633,18 @@ export default function InventoryPage() {
                                           onChange={(e) => setSellNote(e.target.value)}
                                           onClick={(e) => e.stopPropagation()}
                                           placeholder="e.g., John's Auto Shop"
-                                          className="w-full bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                                          className="w-full sm:w-[140px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
                                           required
                                         />
                                       </div>
-                                      <div className="pt-6 flex gap-3">
-                                        <Button variant="outline" onClick={(e) => { e.stopPropagation(); handleCancel(); }} className="border-zinc-300 dark:border-zinc-700">
+                                      <div className="flex gap-3 pt-2 sm:pt-6">
+                                        <Button variant="outline" onClick={(e) => { e.stopPropagation(); handleCancel(); }} className="flex-1 sm:flex-none border-zinc-300 dark:border-zinc-700">
                                           Cancel
                                         </Button>
                                         <Button
                                           onClick={(e) => { e.stopPropagation(); handleSaleSubmit(item); }}
                                           disabled={saleMutation.isPending}
-                                          className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]"
+                                          className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white sm:min-w-[120px]"
                                         >
                                           {saleMutation.isPending ? "Processing..." : "Confirm Sale"}
                                         </Button>
@@ -673,7 +652,7 @@ export default function InventoryPage() {
                                     </div>
                                   )}
                                   {!showTransferUI && sellQuantity && sellPrice && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-200/60 dark:border-zinc-700/60 flex gap-6 text-sm">
+                                    <div className="mt-4 pt-4 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm">
                                       <p className="text-zinc-600 dark:text-zinc-400">
                                         Total: <span className="font-semibold text-zinc-900 dark:text-white">{formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}</span>
                                       </p>
@@ -694,6 +673,7 @@ export default function InventoryPage() {
               )}
             </TableBody>
           </Table>
+          </div>
 
           {/* Pagination Controls */}
           {inventory && inventory.total_items > pageSize && (
@@ -728,256 +708,6 @@ export default function InventoryPage() {
         </Card>
       </motion.div>
 
-      {/* Mobile Card View */}
-      <motion.div variants={itemVariants} className="md:hidden space-y-3">
-        {isLoading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <Card key={i} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-              <CardContent className="p-4">
-                <Skeleton className="h-5 w-32 mb-2" />
-                <Skeleton className="h-4 w-48 mb-3" />
-                <div className="flex justify-between">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-6 w-12" />
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : inventory?.items.length === 0 ? (
-          <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
-            <CardContent className="p-8 text-center text-zinc-500">
-              No inventory items found
-            </CardContent>
-          </Card>
-        ) : (
-          inventory?.items.map((item) => {
-            const hasStock = item.quantity_on_hand > 0;
-
-            return (
-              <Card
-                key={item.id}
-                className={`bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock
-                  ? "cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 active:bg-zinc-100 dark:active:bg-zinc-800"
-                  : "opacity-60"
-                  }`}
-                onClick={() => hasStock && handleRowClick(item, true)}
-              >
-                <CardContent className="p-4">
-                  {/* Product info and quantity badge */}
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="font-medium text-zinc-900 dark:text-white">{item.product.name}</p>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">{item.product.brand}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {item.quantity_on_hand < 5 ? (
-                        <Badge variant="destructive" className="ml-2">
-                          {item.quantity_on_hand}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="ml-2">
-                          {item.quantity_on_hand}
-                        </Badge>
-                      )}
-                      {hasStock && (
-                        <ChevronRight className="h-4 w-4 text-zinc-400" />
-                      )}
-                    </div>
-                  </div>
-                  {/* SKU */}
-                  <div className="mb-2">
-                    <span className="font-mono text-sm text-zinc-500">
-                      {item.product.sku}
-                    </span>
-                  </div>
-                  {/* Pricing grid - Retail | Wholesale | Cost */}
-                  <div className="grid grid-cols-3 gap-2 text-xs border-t border-zinc-200 dark:border-zinc-700 pt-2">
-                    <div className="text-center">
-                      <p className="text-zinc-400 dark:text-zinc-500">Retail</p>
-                      <p className="text-zinc-700 dark:text-zinc-300 font-medium">
-                        {formatCurrency(item.product.retail_price)}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-zinc-400 dark:text-zinc-500">Wholesale</p>
-                      <p className="text-zinc-700 dark:text-zinc-300 font-medium">
-                        {formatCurrency(item.product.wholesale_price)}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-zinc-400 dark:text-zinc-500">Cost</p>
-                      <p className="text-zinc-700 dark:text-zinc-300 font-medium">
-                        {formatCurrency(item.product.cost_price)}
-                      </p>
-                    </div>
-                  </div>
-                  {hasStock && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 text-center">
-                      {showTransferUI ? "Tap to transfer" : "Tap to sell"}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
-      </motion.div>
-
-      {/* Mobile Quick-Sell / Quick-Transfer Sheet */}
-      <Sheet
-        open={mobileSheetItem !== null}
-        onOpenChange={(open) => !open && handleCancel()}
-      >
-        <SheetContent side="bottom" className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-t-2xl">
-          {mobileSheetItem && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-zinc-900 dark:text-white">
-                  {showTransferUI ? "Quick Transfer" : "Quick Sale"}
-                </SheetTitle>
-                <SheetDescription className="text-zinc-600 dark:text-zinc-400">
-                  {mobileSheetItem.product.name} • {mobileSheetItem.product.brand}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="py-4 space-y-4">
-                <div className="flex justify-between items-center p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                  <div>
-                    <p className="font-mono text-sm text-zinc-600 dark:text-zinc-400">{mobileSheetItem.product.sku}</p>
-                    <p className="text-sm text-zinc-500">
-                      Available: <span className="font-medium text-zinc-900 dark:text-white">{mobileSheetItem.quantity_on_hand} units</span>
-                    </p>
-                  </div>
-                  {!showTransferUI && mobileSheetItem.product.retail_price && (
-                    <div className="text-right">
-                      <p className="text-xs text-zinc-500">Retail</p>
-                      <p className="font-medium text-zinc-900 dark:text-white">{formatCurrency(mobileSheetItem.product.retail_price)}</p>
-                    </div>
-                  )}
-                </div>
-
-                {showTransferUI ? (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Destination Warehouse</label>
-                      <Select value={transferDestination} onValueChange={setTransferDestination}>
-                        <SelectTrigger className="h-12 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700">
-                          <SelectValue placeholder="Select warehouse" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {partnerWarehouses.map((wh) => (
-                            <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Quantity to Transfer</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max={mobileSheetItem.quantity_on_hand}
-                        value={transferQuantity}
-                        onChange={(e) => setTransferQuantity(e.target.value)}
-                        className="text-lg h-12 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Note (optional)</label>
-                      <Input
-                        type="text"
-                        value={transferNote}
-                        onChange={(e) => setTransferNote(e.target.value)}
-                        placeholder="e.g., Transfer to CarProofing"
-                        className="bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Quantity to Sell</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max={mobileSheetItem.quantity_on_hand}
-                        value={sellQuantity}
-                        onChange={(e) => setSellQuantity(e.target.value)}
-                        className="text-lg h-12 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Unit Price</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">PKR</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={sellPrice}
-                          onChange={(e) => setSellPrice(e.target.value)}
-                          placeholder="0.00"
-                          className="text-lg h-12 pl-12 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
-                        />
-                      </div>
-                      {mobileSheetItem.product.cost_price && (
-                        <p className="text-xs text-amber-600 dark:text-amber-500">Minimum price (cost): {formatCurrency(mobileSheetItem.product.cost_price)}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Customer / Note <span className="text-red-500">*</span></label>
-                      <Input
-                        type="text"
-                        value={sellNote}
-                        onChange={(e) => setSellNote(e.target.value)}
-                        placeholder="e.g., John's Auto Shop"
-                        className="bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
-                        required
-                      />
-                    </div>
-                    {sellQuantity && sellPrice && (
-                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-blue-700 dark:text-blue-300">Total</span>
-                          <span className="text-xl font-bold text-blue-900 dark:text-blue-100">
-                            {formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}
-                          </span>
-                        </div>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          Stock after sale: {mobileSheetItem.quantity_on_hand - parseInt(sellQuantity || "0", 10)} units
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <SheetFooter className="flex-row gap-3">
-                <Button variant="outline" onClick={handleCancel} className="flex-1 border-zinc-300 dark:border-zinc-700">
-                  Cancel
-                </Button>
-                {showTransferUI ? (
-                  <Button
-                    onClick={() => handleTransferSubmit(mobileSheetItem)}
-                    disabled={transferMutation.isPending || !transferDestination}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {transferMutation.isPending ? "Processing..." : "Confirm Transfer"}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => handleSaleSubmit(mobileSheetItem)}
-                    disabled={saleMutation.isPending}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {saleMutation.isPending ? "Processing..." : "Confirm Sale"}
-                  </Button>
-                )}
-              </SheetFooter>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
     </motion.div>
   );
 }
