@@ -10,4 +10,4 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "next start -H 0.0.0.0 -p $PORT"
+cmd = "sh scripts/start-railway.sh"
