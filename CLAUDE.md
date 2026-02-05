@@ -113,6 +113,7 @@ Core tables: `profiles` (extends auth.users), `products` (catalog), `warehouses`
 | Wrong Supabase key type | Server needs `SUPABASE_SERVICE_KEY` (sb_secret_...) |
 | Turbopack cache corrupt | `rm -rf frontend/.next` |
 | Port in use | `lsof -i :3000`, then `kill <PID>` |
+| Railway 502 error (server starts OK) | Check Settings → Networking → Domain port matches detected port (Railway sets PORT=8080) |
 
 ## Environment Variables
 
@@ -154,6 +155,7 @@ Single Railway service - API routes are built into Next.js.
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_KEY` (for API routes)
 6. Deploy - Railway will run `npm run build` then `npm start`
+7. **Important**: In Settings → Networking, ensure the domain port matches Railway's detected port (usually 8080, not 3000)
 
 **Config Files:**
 - `railway.toml` - Railway deployment config
