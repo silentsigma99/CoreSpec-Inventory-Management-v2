@@ -230,6 +230,21 @@ The issue is likely Railway-specific infrastructure:
 
 ---
 
+## Resolution (Feb 2026)
+
+**Log evidence confirmed:**
+- `PORT=8080` — Railway injects correctly
+- `Network: http://0.0.0.0:8080` — App binds correctly
+- `Ready in 606ms` — Server starts successfully
+
+**Root cause:** Domain target port mismatch. The app listens on 8080, but Railway's domain may route to a different port (e.g. 3000).
+
+**Fix:** Railway Dashboard → Service → Settings → Public Networking → Click the **edit icon** next to your domain → Set **target port to 8080**.
+
+**Code change:** Switched to `sh scripts/start-railway.sh` which runs `npx next start -H 0.0.0.0` (no `-p` flag). Next.js uses `process.env.PORT` automatically.
+
+---
+
 ## Lessons Learned
 
 1. **Next.js 16 has breaking changes** - Middleware file convention is deprecated

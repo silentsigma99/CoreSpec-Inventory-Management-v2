@@ -46,7 +46,7 @@ export async function middleware(request: NextRequest) {
     const user = session?.user;
 
     // Define public routes that don't require authentication
-    const publicRoutes = ["/login"];
+    const publicRoutes = ["/login", "/api/health"];
     const isPublicRoute = publicRoutes.some((route) =>
       request.nextUrl.pathname.startsWith(route)
     );
