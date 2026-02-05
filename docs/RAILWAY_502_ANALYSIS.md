@@ -185,6 +185,51 @@ Railway's `PORT` env var (8080) conflicts with our hardcoded port.
 
 ---
 
+## Latest Change (Attempt 6): Direct `next start` with `$PORT`
+
+### Reasoning
+
+Previous attempts used `npm start` which reads from `package.json`. The problem:
+
+1. **package.json cannot expand environment variables** - Writing `"start": "next start -p $PORT"` in package.json does NOT work because JSON doesn't support shell variable expansion
+2. **Hardcoding ports creates mismatches** - Hardcoding 3000 or 8080 assumes Railway's behavior, which may vary
+3. **Nixpacks may override our commands** - Build logs showed Nixpacks using its own detected start command, ignoring our configs
+
+### The Fix
+
+Changed `railway.toml` and `nixpacks.toml` to run `next start` directly (not via npm):
+
+```toml
+# railway.toml
+startCommand = "next start -H 0.0.0.0 -p $PORT"
+
+# nixpacks.toml
+cmd = "next start -H 0.0.0.0 -p $PORT"
+```
+
+And reverted `package.json` to simple:
+```json
+"start": "next start"
+```
+
+### Why This Should Work
+
+1. **Shell variable expansion** - `$PORT` expands in the shell context of railway.toml/nixpacks.toml
+2. **Bypasses npm** - Running `next start` directly avoids any npm/package.json complexity
+3. **Uses Railway's PORT** - Railway sets `PORT=8080`, so server listens on 8080
+4. **Domain auto-matches** - Railway auto-detects port 8080 and configures domain routing
+
+### If This Fails
+
+The issue is likely Railway-specific infrastructure:
+- Stale deployments
+- Cached routing rules
+- Service-level configuration issues
+
+**Nuclear option:** Delete the Railway service entirely and recreate from scratch.
+
+---
+
 ## Lessons Learned
 
 1. **Next.js 16 has breaking changes** - Middleware file convention is deprecated
@@ -192,3 +237,5 @@ Railway's `PORT` env var (8080) conflicts with our hardcoded port.
 3. **Config file hierarchy unclear** - `railway.toml`, `nixpacks.toml`, and `package.json` may conflict
 4. **Healthcheck success ≠ external access** - Internal health can pass while external routing fails
 5. **Document deployment issues** - Port mismatches are subtle and hard to diagnose from logs alone
+6. **package.json doesn't expand env vars** - Shell variables like `$PORT` don't work in JSON
+7. **Use direct commands over npm wrappers** - Running `next start` directly is more predictable than `npm start`
