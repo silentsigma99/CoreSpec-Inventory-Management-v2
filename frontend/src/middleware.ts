@@ -42,8 +42,18 @@ export async function middleware(request: NextRequest) {
       request.nextUrl.pathname.startsWith(route)
     );
 
+    // Check if this is an API route
+    const isApiRoute = request.nextUrl.pathname.startsWith("/api/");
+
     // If user is not authenticated and trying to access protected route
     if (!user && !isPublicRoute) {
+      // API routes should return 401 JSON, not redirect
+      if (isApiRoute) {
+        return NextResponse.json(
+          { detail: "Unauthorized" },
+          { status: 401 }
+        );
+      }
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       return NextResponse.redirect(url);
