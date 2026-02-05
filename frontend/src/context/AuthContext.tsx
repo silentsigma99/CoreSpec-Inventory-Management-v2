@@ -115,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- supabase.auth is stable; adding it can cause duplicate subscriptions
   }, []);
 
   const signIn = async (email: string, password: string) => {

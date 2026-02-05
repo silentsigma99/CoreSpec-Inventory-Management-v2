@@ -11,6 +11,7 @@ interface PurchaseRequest {
   quantity: number;
   unit_cost?: number;
   reference_note?: string;
+  batch_id?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
   if (adminError) return adminError;
 
   const body: PurchaseRequest = await request.json();
-  const { warehouse_id, product_id, quantity, unit_cost, reference_note } = body;
+  const { warehouse_id, product_id, quantity, unit_cost, reference_note, batch_id } = body;
 
   // Validate required fields
   if (!warehouse_id || !product_id || !quantity) {
@@ -70,57 +71,37 @@ export async function POST(request: NextRequest) {
   const finalUnitCost = unit_cost ?? product.cost_price;
 
   try {
-    // Check if inventory item exists
+    const { data: transactionId, error: rpcError } = await supabase.rpc(
+      "record_purchase",
+      {
+        p_warehouse_id: warehouse_id,
+        p_product_id: product_id,
+        p_quantity: quantity,
+        p_unit_cost: finalUnitCost,
+        p_note: reference_note || null,
+        p_user_id: user.userId,
+        p_batch_id: batch_id || null,
+      }
+    );
+
+    if (rpcError || !transactionId) {
+      const errMsg = rpcError?.message ?? "Failed to record purchase";
+      return NextResponse.json({ detail: errMsg }, { status: 400 });
+    }
+
     const { data: inventoryData } = await supabase
       .from("inventory_items")
-      .select("*")
+      .select("quantity_on_hand")
       .eq("warehouse_id", warehouse_id)
-      .eq("product_id", product_id);
-
-    let newStock: number;
-
-    if (inventoryData && inventoryData.length > 0) {
-      // Update existing inventory
-      const currentStock = inventoryData[0].quantity_on_hand;
-      newStock = currentStock + quantity;
-      await supabase
-        .from("inventory_items")
-        .update({ quantity_on_hand: newStock })
-        .eq("id", inventoryData[0].id);
-    } else {
-      // Create new inventory item
-      newStock = quantity;
-      await supabase.from("inventory_items").insert({
-        warehouse_id,
-        product_id,
-        quantity_on_hand: newStock,
-      });
-    }
-
-    // Create RESTOCK transaction
-    const { data: transaction, error: txError } = await supabase
-      .from("transactions")
-      .insert({
-        transaction_type: "RESTOCK",
-        product_id,
-        from_warehouse_id: null,
-        to_warehouse_id: warehouse_id,
-        quantity,
-        unit_price: finalUnitCost,
-        reference_note: reference_note || null,
-        created_by: user.userId,
-      })
-      .select()
+      .eq("product_id", product_id)
       .single();
 
-    if (txError || !transaction) {
-      throw new Error("Failed to create transaction");
-    }
+    const newStock = inventoryData?.quantity_on_hand ?? quantity;
 
     return NextResponse.json({
       success: true,
       message: `Purchase recorded: ${quantity} x ${product.name}`,
-      transaction_id: transaction.id,
+      transaction_id: transactionId,
       warehouse_id,
       product_id,
       quantity,

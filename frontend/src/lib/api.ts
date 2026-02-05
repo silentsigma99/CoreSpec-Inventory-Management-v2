@@ -118,6 +118,46 @@ export const api = {
     return res.json();
   },
 
+  // Purchase batches
+  async getPurchaseBatches(
+    warehouseId: string,
+    options?: { page?: number; page_size?: number }
+  ) {
+    const params = new URLSearchParams();
+    params.set("warehouse_id", warehouseId);
+    if (options?.page) params.set("page", options.page.toString());
+    if (options?.page_size) params.set("page_size", options.page_size.toString());
+    const res = await fetchApi(`/api/purchase-batches?${params}`);
+    if (!res.ok) throw new Error("Failed to fetch purchase batches");
+    return res.json();
+  },
+
+  async getPurchaseBatch(batchId: string) {
+    const res = await fetchApi(`/api/purchase-batches/${batchId}`);
+    if (!res.ok) throw new Error("Failed to fetch purchase batch");
+    return res.json();
+  },
+
+  async createPurchaseBatch(data: {
+    warehouse_id: string;
+    po_number?: string;
+    vendor_bill_number?: string;
+    vendor_name?: string;
+    bill_date?: string;
+    total_amount?: number;
+    notes?: string;
+  }) {
+    const res = await fetchApi("/api/purchase-batches", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to create batch");
+    }
+    return res.json();
+  },
+
   // Purchases
   async recordPurchase(data: {
     warehouse_id: string;
@@ -125,6 +165,7 @@ export const api = {
     quantity: number;
     unit_cost?: number;
     reference_note?: string;
+    batch_id?: string;
   }) {
     const res = await fetchApi("/api/purchases", {
       method: "POST",
@@ -133,6 +174,81 @@ export const api = {
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.detail || "Failed to record purchase");
+    }
+    return res.json();
+  },
+
+  // Invoices
+  async getInvoices(
+    warehouseId: string,
+    options?: { status?: string; page?: number; page_size?: number }
+  ) {
+    const params = new URLSearchParams();
+    params.set("warehouse_id", warehouseId);
+    if (options?.status) params.set("status", options.status);
+    if (options?.page) params.set("page", options.page.toString());
+    if (options?.page_size) params.set("page_size", options.page_size.toString());
+    const res = await fetchApi(`/api/invoices?${params}`);
+    if (!res.ok) throw new Error("Failed to fetch invoices");
+    return res.json();
+  },
+
+  async getInvoice(invoiceId: string) {
+    const res = await fetchApi(`/api/invoices/${invoiceId}`);
+    if (!res.ok) throw new Error("Failed to fetch invoice");
+    return res.json();
+  },
+
+  async createInvoice(data: {
+    warehouse_id: string;
+    customer_name: string;
+    customer_phone?: string;
+    customer_address?: string;
+    customer_email?: string;
+    due_date?: string;
+    notes?: string;
+    items: { product_id: string; quantity: number; unit_price: number }[];
+  }) {
+    const res = await fetchApi("/api/invoices", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to create invoice");
+    }
+    return res.json();
+  },
+
+  async confirmInvoice(invoiceId: string) {
+    const res = await fetchApi(`/api/invoices/${invoiceId}/confirm`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to confirm invoice");
+    }
+    return res.json();
+  },
+
+  async markInvoicePaid(invoiceId: string) {
+    const res = await fetchApi(`/api/invoices/${invoiceId}/pay`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to mark invoice paid");
+    }
+    return res.json();
+  },
+
+  async voidInvoice(invoiceId: string) {
+    const res = await fetchApi(`/api/invoices/${invoiceId}/void`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to void invoice");
     }
     return res.json();
   },

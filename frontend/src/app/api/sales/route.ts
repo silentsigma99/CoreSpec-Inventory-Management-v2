@@ -81,22 +81,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Get inventory and validate stock
-  const { data: inventory, error: inventoryError } = await supabase
+  // Get current stock for response (validation happens in RPC)
+  const { data: inventory } = await supabase
     .from("inventory_items")
-    .select("*")
+    .select("quantity_on_hand")
     .eq("warehouse_id", warehouse_id)
     .eq("product_id", product_id)
     .single();
 
-  if (inventoryError || !inventory) {
-    return NextResponse.json(
-      { detail: "Product not found in this warehouse" },
-      { status: 400 }
-    );
-  }
-
-  const currentStock = inventory.quantity_on_hand;
+  const currentStock = inventory?.quantity_on_hand ?? 0;
   if (currentStock < quantity) {
     return NextResponse.json(
       {
@@ -107,37 +100,31 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 1. Decrement inventory
-    const newStock = currentStock - quantity;
-    await supabase
-      .from("inventory_items")
-      .update({ quantity_on_hand: newStock })
-      .eq("id", inventory.id);
+    const { data: transactionId, error: rpcError } = await supabase.rpc(
+      "record_sale",
+      {
+        p_warehouse_id: warehouse_id,
+        p_product_id: product_id,
+        p_quantity: quantity,
+        p_unit_price: finalUnitPrice,
+        p_note: reference_note || null,
+        p_user_id: user.userId,
+      }
+    );
 
-    // 2. Create SALE transaction
-    const { data: transaction, error: txError } = await supabase
-      .from("transactions")
-      .insert({
-        transaction_type: "SALE",
-        product_id,
-        from_warehouse_id: warehouse_id,
-        to_warehouse_id: null,
-        quantity,
-        unit_price: finalUnitPrice,
-        reference_note: reference_note || null,
-        created_by: user.userId,
-      })
-      .select()
-      .single();
-
-    if (txError || !transaction) {
-      throw new Error("Failed to create transaction");
+    if (rpcError || !transactionId) {
+      const errMsg = rpcError?.message ?? "Failed to record sale";
+      return NextResponse.json(
+        { detail: errMsg },
+        { status: 400 }
+      );
     }
 
+    const newStock = currentStock - quantity;
     return NextResponse.json({
       success: true,
       message: `Sale recorded: ${quantity} x ${product.name}`,
-      transaction_id: transaction.id,
+      transaction_id: transactionId,
       warehouse_id,
       product_id,
       quantity,

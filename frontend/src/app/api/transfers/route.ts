@@ -86,22 +86,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ detail: "Product not found" }, { status: 404 });
   }
 
-  // Get source inventory and validate stock
-  const { data: sourceInventory, error: invError } = await supabase
+  // Pre-validate stock (RPC will re-validate atomically)
+  const { data: sourceInventory } = await supabase
     .from("inventory_items")
-    .select("*")
+    .select("quantity_on_hand")
     .eq("warehouse_id", from_warehouse_id)
     .eq("product_id", product_id)
     .single();
 
-  if (invError || !sourceInventory) {
-    return NextResponse.json(
-      { detail: "Product not found in source warehouse" },
-      { status: 400 }
-    );
-  }
-
-  const currentStock = sourceInventory.quantity_on_hand;
+  const currentStock = sourceInventory?.quantity_on_hand ?? 0;
   if (currentStock < quantity) {
     return NextResponse.json(
       {
@@ -111,82 +104,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const note = reference_note || `Transfer to ${dest.name}`;
+
   try {
-    // 1. Decrement source inventory
-    const newSourceQty = currentStock - quantity;
-    await supabase
-      .from("inventory_items")
-      .update({ quantity_on_hand: newSourceQty })
-      .eq("id", sourceInventory.id);
+    const { data: result, error: rpcError } = await supabase.rpc("record_transfer", {
+      p_from_warehouse_id: from_warehouse_id,
+      p_to_warehouse_id: to_warehouse_id,
+      p_product_id: product_id,
+      p_quantity: quantity,
+      p_note: note,
+      p_user_id: user.userId,
+    });
 
-    // 2. Increment or create destination inventory
-    const { data: destInventoryData } = await supabase
-      .from("inventory_items")
-      .select("*")
-      .eq("warehouse_id", to_warehouse_id)
-      .eq("product_id", product_id);
-
-    const destInventory = destInventoryData?.[0];
-
-    if (destInventory) {
-      // Update existing
-      const newDestQty = destInventory.quantity_on_hand + quantity;
-      await supabase
-        .from("inventory_items")
-        .update({ quantity_on_hand: newDestQty })
-        .eq("id", destInventory.id);
-    } else {
-      // Create new inventory record
-      await supabase.from("inventory_items").insert({
-        warehouse_id: to_warehouse_id,
-        product_id,
-        quantity_on_hand: quantity,
-      });
+    if (rpcError || !result || result.length === 0) {
+      const errMsg = rpcError?.message ?? "Transfer failed";
+      return NextResponse.json({ detail: errMsg }, { status: 400 });
     }
 
-    // 3. Create TRANSFER_OUT transaction
-    const { data: transferOut, error: outError } = await supabase
-      .from("transactions")
-      .insert({
-        transaction_type: "TRANSFER_OUT",
-        product_id,
-        from_warehouse_id,
-        to_warehouse_id,
-        quantity,
-        reference_note: reference_note || `Transfer to ${dest.name}`,
-        created_by: user.userId,
-      })
-      .select()
-      .single();
-
-    if (outError || !transferOut) {
-      throw new Error("Failed to create TRANSFER_OUT transaction");
-    }
-
-    // 4. Create TRANSFER_IN transaction
-    const { data: transferIn, error: inError } = await supabase
-      .from("transactions")
-      .insert({
-        transaction_type: "TRANSFER_IN",
-        product_id,
-        from_warehouse_id,
-        to_warehouse_id,
-        quantity,
-        reference_note: reference_note || `Transfer from ${source.name}`,
-        created_by: user.userId,
-      })
-      .select()
-      .single();
-
-    if (inError || !transferIn) {
-      throw new Error("Failed to create TRANSFER_IN transaction");
-    }
-
+    const row = Array.isArray(result) ? result[0] : result;
     return NextResponse.json({
       success: true,
       message: `Successfully transferred ${quantity} units`,
-      transfer_out_id: transferOut.id,
-      transfer_in_id: transferIn.id,
+      transfer_out_id: row.transfer_out_id,
+      transfer_in_id: row.transfer_in_id,
       from_warehouse_id,
       to_warehouse_id,
       product_id,

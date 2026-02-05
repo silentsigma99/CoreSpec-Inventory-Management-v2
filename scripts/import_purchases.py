@@ -5,15 +5,22 @@ Run from project root: python scripts/import_purchases.py <csv_file> [purchase_d
 Examples:
   python scripts/import_purchases.py "./purchases.csv" "January 31, 2026"
   python scripts/import_purchases.py "./Gemini Export.csv"
+  python scripts/import_purchases.py "./purchases.csv" --po-number PO-123 --vendor "Acme Corp" --bill-date 2026-01-31
 
 This script will:
 1. Read the CSV file with purchase data
-2. Match products by SKU (with normalization)
-3. Increment inventory in Main Warehouse
-4. Create RESTOCK transactions for each item
-5. Report any unmatched SKUs
+2. Create a purchase batch (if batch metadata provided)
+3. Match products by SKU (with normalization)
+4. Increment inventory in Main Warehouse
+5. Create RESTOCK transactions for each item (linked to batch)
+6. Report any unmatched SKUs
+
+Batch metadata can be provided via:
+- CSV columns: PO Number, Vendor Bill Number, Vendor Name, Bill Date (from first row)
+- Command-line: --po-number, --vendor-bill, --vendor-name, --bill-date
 """
 
+import argparse
 import csv
 import os
 import sys
@@ -58,22 +65,44 @@ def create_sku_variations(sku: str) -> list[str]:
     ]
 
 
-def main():
-    # Parse command line arguments
-    if len(sys.argv) < 2:
-        print("Usage: python scripts/import_purchases.py <csv_file> [purchase_date]")
-        print()
-        print("Arguments:")
-        print("  csv_file      Path to CSV file (required)")
-        print("  purchase_date Date for reference note (optional, defaults to today)")
-        print()
-        print("Examples:")
-        print('  python scripts/import_purchases.py "./purchases.csv" "January 31, 2026"')
-        print('  python scripts/import_purchases.py "./Gemini Export.csv"')
-        sys.exit(1)
+def parse_date(s: str) -> str | None:
+    """Parse date string to YYYY-MM-DD format."""
+    if not s or not s.strip():
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(s.strip(), fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
 
-    csv_path = sys.argv[1]
-    purchase_date = sys.argv[2] if len(sys.argv) > 2 else datetime.now().strftime("%B %d, %Y")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Import purchases from CSV file into Main Warehouse."
+    )
+    parser.add_argument("csv_file", help="Path to CSV file")
+    parser.add_argument(
+        "purchase_date",
+        nargs="?",
+        default=datetime.now().strftime("%B %d, %Y"),
+        help="Date for reference note (default: today)",
+    )
+    parser.add_argument("--po-number", help="Purchase order number for batch")
+    parser.add_argument("--vendor-bill", help="Vendor bill number for batch")
+    parser.add_argument("--vendor-name", "--vendor", dest="vendor_name", help="Vendor/supplier name for batch")
+    parser.add_argument("--bill-date", help="Bill date (YYYY-MM-DD or similar) for batch")
+    args = parser.parse_args()
+
+    csv_path = args.csv_file
+    purchase_date = args.purchase_date
+
+    batch_meta = {
+        "po_number": args.po_number,
+        "vendor_bill_number": args.vendor_bill,
+        "vendor_name": args.vendor_name,
+        "bill_date": parse_date(args.bill_date) if args.bill_date else None,
+    }
 
     # Handle relative paths
     if not os.path.isabs(csv_path):
@@ -83,8 +112,23 @@ def main():
         print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment")
         sys.exit(1)
 
-    print(f"Connecting to Supabase...")
+    print("Connecting to Supabase...")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+    batch_id = None
+    if any(batch_meta.values()):
+        print("Creating purchase batch...")
+        batch_row = {
+            "warehouse_id": MAIN_WAREHOUSE_ID,
+            "po_number": batch_meta.get("po_number"),
+            "vendor_bill_number": batch_meta.get("vendor_bill_number"),
+            "vendor_name": batch_meta.get("vendor_name"),
+            "bill_date": batch_meta.get("bill_date"),
+        }
+        batch_resp = supabase.table("purchase_batches").insert(batch_row).execute()
+        if batch_resp.data and len(batch_resp.data) > 0:
+            batch_id = batch_resp.data[0]["id"]
+            print(f"  Batch created: {batch_id}")
 
     # Load all products for SKU matching
     print("Loading products from database...")
@@ -125,6 +169,22 @@ def main():
             if not sku or not qty_str:
                 continue
 
+            if row_num == 2 and not batch_id and any(
+                row.get(k) for k in ("PO Number", "Vendor Bill Number", "Vendor Name", "Bill Date")
+            ):
+                batch_row = {
+                    "warehouse_id": MAIN_WAREHOUSE_ID,
+                    "po_number": row.get("PO Number", "").strip() or None,
+                    "vendor_bill_number": row.get("Vendor Bill Number", "").strip() or None,
+                    "vendor_name": row.get("Vendor Name", "").strip() or None,
+                    "bill_date": parse_date(row.get("Bill Date", "")) if row.get("Bill Date") else None,
+                }
+                if any(batch_row.get(k) for k in ("po_number", "vendor_bill_number", "vendor_name", "bill_date")):
+                    batch_resp = supabase.table("purchase_batches").insert(batch_row).execute()
+                    if batch_resp.data and len(batch_resp.data) > 0:
+                        batch_id = batch_resp.data[0]["id"]
+                        print(f"  Batch created from CSV: {batch_id}")
+
             try:
                 quantity = int(qty_str)
             except ValueError:
@@ -134,7 +194,6 @@ def main():
             if quantity <= 0:
                 continue
 
-            # Try to match product by SKU variations
             product = None
             for variation in create_sku_variations(sku):
                 if variation in products_by_sku:
@@ -146,7 +205,6 @@ def main():
                 continue
 
             try:
-                # Get or create inventory item
                 inventory = supabase.table("inventory_items")\
                     .select("*")\
                     .eq("warehouse_id", MAIN_WAREHOUSE_ID)\
@@ -154,14 +212,12 @@ def main():
                     .execute()
 
                 if inventory.data and len(inventory.data) > 0:
-                    # Update existing inventory
                     new_qty = inventory.data[0]["quantity_on_hand"] + quantity
                     supabase.table("inventory_items")\
                         .update({"quantity_on_hand": new_qty})\
                         .eq("id", inventory.data[0]["id"])\
                         .execute()
                 else:
-                    # Create new inventory item
                     new_qty = quantity
                     supabase.table("inventory_items").insert({
                         "warehouse_id": MAIN_WAREHOUSE_ID,
@@ -169,16 +225,19 @@ def main():
                         "quantity_on_hand": new_qty,
                     }).execute()
 
-                # Create RESTOCK transaction
-                supabase.table("transactions").insert({
+                tx_payload = {
                     "transaction_type": "RESTOCK",
                     "product_id": product["id"],
                     "from_warehouse_id": None,
                     "to_warehouse_id": MAIN_WAREHOUSE_ID,
                     "quantity": quantity,
-                    "unit_price": product.get("cost_price"),  # Use product cost
+                    "unit_price": product.get("cost_price"),
                     "reference_note": f"Purchase: {purchase_date} - {description}",
-                }).execute()
+                }
+                if batch_id:
+                    tx_payload["batch_id"] = batch_id
+
+                supabase.table("transactions").insert(tx_payload).execute()
 
                 imported += 1
                 print(f"  + Imported: {sku} -> {product['name']} x {quantity}")

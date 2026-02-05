@@ -29,6 +29,7 @@ export async function GET() {
     id: w.id,
     name: w.name,
     manager_id: w.manager_id || null,
+    is_main: w.is_main ?? false,
     created_at: w.created_at || null,
   }));
 

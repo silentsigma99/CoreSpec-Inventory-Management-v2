@@ -2,17 +2,15 @@
 
 /**
  * Sales History Page
- * 
- * Displays a history of all sales transactions for the warehouse.
- * - Partners see all sales from their assigned warehouse
- * - Admins can switch between warehouses
- * 
- * Sales are now recorded from the Inventory page via inline quick-sell.
+ *
+ * Two tabs:
+ * - On-the-Spot Sales: Individual SALE transactions (recorded from Inventory)
+ * - Invoiced Sales: Invoices with DRAFT/CONFIRMED/PAID status
  */
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -36,9 +34,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { BrandFilter } from "@/components/ui/brand-filter";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { InvoiceForm } from "@/components/invoices/InvoiceForm";
+import { InvoiceDetailSheet } from "@/components/invoices/InvoiceDetailSheet";
 
-// Types for API responses
 interface Warehouse {
   id: string;
   name: string;
@@ -56,38 +57,58 @@ interface Transaction {
   id: string;
   transaction_type: string;
   product_id: string;
-  from_warehouse_id?: string;
-  to_warehouse_id?: string;
   quantity: number;
   unit_price?: number;
   reference_note?: string;
-  created_by?: string;
   created_at: string;
   product?: Product;
 }
 
-interface TransactionListResponse {
-  items: Transaction[];
+interface Invoice {
+  id: string;
+  invoice_number: string;
+  customer_name: string;
+  status: string;
   total: number;
-  page: number;
-  page_size: number;
+  due_date: string | null;
+  created_at: string;
+  item_count: number;
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    DRAFT: "bg-zinc-500/20 text-zinc-400",
+    CONFIRMED: "bg-blue-500/20 text-blue-400",
+    PAID: "bg-green-500/20 text-green-400",
+    CANCELLED: "bg-zinc-500/20 text-zinc-500 line-through",
+    VOID: "bg-red-500/20 text-red-400",
+  };
+  return (
+    <Badge variant="secondary" className={cn("text-xs", styles[status] || "")}>
+      {status}
+    </Badge>
+  );
 }
 
 export default function SalesHistoryPage() {
   const { profile, isAdmin } = useAuth();
+  const queryClient = useQueryClient();
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"spot" | "invoiced">("spot");
+  const [spotPage, setSpotPage] = useState(1);
+  const [invoicePage, setInvoicePage] = useState(1);
   const [brand, setBrand] = useState<string>("all");
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false);
   const pageSize = 20;
 
-  // Fetch warehouses (for admin dropdown)
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.getWarehouses(),
     enabled: isAdmin,
   });
 
-  // Set default warehouse based on user role
   useEffect(() => {
     if (profile?.warehouse_id && !selectedWarehouse) {
       setSelectedWarehouse(profile.warehouse_id);
@@ -96,74 +117,96 @@ export default function SalesHistoryPage() {
     }
   }, [profile, isAdmin, warehouses, selectedWarehouse]);
 
-  // Reset page when warehouse or brand changes
   useEffect(() => {
-    setCurrentPage(1);
+    setSpotPage(1);
+    setInvoicePage(1);
   }, [selectedWarehouse, brand]);
 
-  // Fetch sales transactions for the selected warehouse
-  const {
-    data: transactions,
-    isLoading,
-    error,
-  } = useQuery<TransactionListResponse>({
-    queryKey: ["transactions", selectedWarehouse, "SALE", currentPage, brand],
+  const { data: transactions, isLoading: spotLoading, error: spotError } = useQuery<{
+    items: Transaction[];
+    total: number;
+    page: number;
+    page_size: number;
+  }>({
+    queryKey: ["transactions", selectedWarehouse, "SALE", spotPage, brand],
     queryFn: () =>
       api.getTransactions(selectedWarehouse, {
         transaction_type: "SALE",
-        page: currentPage,
+        page: spotPage,
         page_size: pageSize,
         brand: brand === "all" ? undefined : brand,
       }),
-    enabled: !!selectedWarehouse,
+    enabled: !!selectedWarehouse && activeTab === "spot",
   });
 
-  // Calculate pagination info
-  const totalPages = transactions
-    ? Math.ceil(transactions.total / pageSize)
-    : 0;
+  const { data: invoicesData, isLoading: invoiceLoading, error: invoiceError } = useQuery<{
+    items: Invoice[];
+    total: number;
+    page: number;
+    page_size: number;
+  }>({
+    queryKey: ["invoices", selectedWarehouse, invoicePage],
+    queryFn: () =>
+      api.getInvoices(selectedWarehouse, {
+        page: invoicePage,
+        page_size: pageSize,
+      }),
+    enabled: !!selectedWarehouse && activeTab === "invoiced",
+  });
 
-  /**
-   * Format date for display
-   */
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
+  const confirmMutation = useMutation({
+    mutationFn: (id: string) => api.confirmInvoice(id),
+    onSuccess: () => {
+      toast.success("Invoice confirmed, stock reserved");
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: (id: string) => api.markInvoicePaid(id),
+    onSuccess: () => {
+      toast.success("Invoice marked as paid");
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: (id: string) => api.voidInvoice(id),
+    onSuccess: () => {
+      toast.success("Invoice voided, stock restored");
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const formatDate = (dateString: string) =>
+    new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(date);
-  };
+    }).format(new Date(dateString));
 
-  /**
-   * Calculate total revenue from current page
-   */
-  const pageRevenue = transactions?.items.reduce((sum, t) => {
-    const price = t.unit_price || 0;
-    return sum + price * t.quantity;
-  }, 0) || 0;
+  const spotTotalPages = transactions ? Math.ceil(transactions.total / pageSize) : 0;
+  const invoiceTotalPages = invoicesData ? Math.ceil(invoicesData.total / pageSize) : 0;
+  const pageRevenue =
+    transactions?.items.reduce((sum, t) => sum + (t.unit_price || 0) * t.quantity, 0) ?? 0;
 
   const containerVariants = {
     hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
+    visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
   };
+  const itemVariants = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
-  };
-
-  if (error) {
+  if (spotError || invoiceError) {
     return (
       <div className="text-red-500 dark:text-red-400 p-4">
-        Error loading sales history: {error.message}
+        Error: {(spotError || invoiceError)?.message}
       </div>
     );
   }
@@ -175,22 +218,16 @@ export default function SalesHistoryPage() {
       animate="visible"
       className="space-y-6"
     >
-      {/* Header */}
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-            Sales History
-          </h1>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Sales</h1>
           <p className="text-zinc-600 dark:text-zinc-400 mt-1">
-            View past sales transactions
+            On-the-spot sales and invoiced sales
           </p>
         </div>
 
         <div className="flex gap-3 items-center flex-wrap">
-          {/* Brand Filter */}
           <BrandFilter value={brand} onChange={setBrand} />
-
-          {/* Warehouse selector (admin only) */}
           {isAdmin && warehouses && (
             <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
               <SelectTrigger className="w-full sm:w-[200px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
@@ -198,9 +235,7 @@ export default function SalesHistoryPage() {
               </SelectTrigger>
               <SelectContent>
                 {warehouses.map((wh) => (
-                  <SelectItem key={wh.id} value={wh.id}>
-                    {wh.name}
-                  </SelectItem>
+                  <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -208,315 +243,386 @@ export default function SalesHistoryPage() {
         </div>
       </motion.div>
 
-      {/* Stats Cards */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-              Total Sales
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">
-              {isLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                transactions?.total || 0
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-              Page Revenue
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {isLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                formatCurrency(pageRevenue)
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B] col-span-2 md:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-              Showing
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-medium text-zinc-900 dark:text-white">
-              {isLoading ? (
-                <Skeleton className="h-6 w-24" />
-              ) : transactions?.items.length ? (
-                `${(currentPage - 1) * pageSize + 1}-${Math.min(
-                  currentPage * pageSize,
-                  transactions.total
-                )} of ${transactions.total}`
-              ) : (
-                "No sales"
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Desktop Table View */}
-      <motion.div variants={itemVariants} className="hidden md:block">
-        <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50">
-                <TableHead className="text-zinc-600 dark:text-zinc-400">
-                  Date
-                </TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400">
-                  Product
-                </TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
-                  Qty
-                </TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
-                  Unit Price
-                </TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
-                  Total
-                </TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400">
-                  Note
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow
-                    key={i}
-                    className="border-zinc-200 dark:border-zinc-800"
-                  >
-                    <TableCell>
-                      <Skeleton className="h-4 w-32" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-40" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-12 ml-auto" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-16 ml-auto" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-20 ml-auto" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-24" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : transactions?.items.length === 0 ? (
-                <TableRow className="border-zinc-200 dark:border-zinc-800">
-                  <TableCell
-                    colSpan={6}
-                    className="text-center text-zinc-500 py-8"
-                  >
-                    No sales recorded yet. Go to Inventory to record a sale.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                transactions?.items.map((transaction) => {
-                  const total =
-                    (transaction.unit_price || 0) * transaction.quantity;
-
-                  return (
-                    <TableRow
-                      key={transaction.id}
-                      className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
-                    >
-                      <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
-                        {formatDate(transaction.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-zinc-900 dark:text-white">
-                            {transaction.product?.name || "Unknown Product"}
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            {transaction.product?.sku}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="secondary">{transaction.quantity}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-zinc-600 dark:text-zinc-400">
-                        {formatCurrency(transaction.unit_price)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-zinc-900 dark:text-white">
-                        {formatCurrency(total)}
-                      </TableCell>
-                      <TableCell className="text-zinc-500 dark:text-zinc-400 text-sm max-w-[150px] truncate">
-                        {transaction.reference_note || "—"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Page {currentPage} of {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="border-zinc-300 dark:border-zinc-700"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalPages, p + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                  className="border-zinc-300 dark:border-zinc-700"
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </div>
+      {/* Tabs */}
+      <motion.div variants={itemVariants} className="flex gap-2 border-b border-zinc-200 dark:border-zinc-800">
+        <button
+          onClick={() => setActiveTab("spot")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "spot"
+              ? "border-blue-600 text-blue-600 dark:text-blue-400"
+              : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
           )}
-        </Card>
+        >
+          On-the-Spot Sales
+        </button>
+        <button
+          onClick={() => setActiveTab("invoiced")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "invoiced"
+              ? "border-blue-600 text-blue-600 dark:text-blue-400"
+              : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          )}
+        >
+          Invoiced Sales
+        </button>
       </motion.div>
 
-      {/* Mobile Card View */}
-      <motion.div variants={itemVariants} className="md:hidden space-y-3">
-        {isLoading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <Card
-              key={i}
-              className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-            >
-              <CardContent className="p-4">
-                <Skeleton className="h-5 w-32 mb-2" />
-                <Skeleton className="h-4 w-48 mb-3" />
-                <div className="flex justify-between">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-6 w-16" />
+      {activeTab === "spot" && (
+        <>
+          <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Total Sales</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-zinc-900 dark:text-white">
+                  {spotLoading ? <Skeleton className="h-8 w-16" /> : transactions?.total ?? 0}
                 </div>
               </CardContent>
             </Card>
-          ))
-        ) : transactions?.items.length === 0 ? (
-          <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
-            <CardContent className="p-8 text-center text-zinc-500">
-              No sales recorded yet.
-              <br />
-              <span className="text-sm">
-                Go to Inventory to record a sale.
-              </span>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {transactions?.items.map((transaction) => {
-              const total =
-                (transaction.unit_price || 0) * transaction.quantity;
+            <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Page Revenue</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {spotLoading ? <Skeleton className="h-8 w-20" /> : formatCurrency(pageRevenue)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B] col-span-2 md:col-span-1">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Showing</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-medium text-zinc-900 dark:text-white">
+                  {spotLoading ? <Skeleton className="h-6 w-24" /> : transactions?.items.length ? `${(spotPage - 1) * pageSize + 1}-${Math.min(spotPage * pageSize, transactions.total)} of ${transactions.total}` : "No sales"}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-              return (
-                <Card
-                  key={transaction.id}
-                  className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                >
+          <motion.div variants={itemVariants} className="hidden md:block">
+            <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-200 dark:border-zinc-800">
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Date</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Product</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Qty</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Unit Price</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Total</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Note</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {spotLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i} className="border-zinc-200 dark:border-zinc-800">
+                        <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : transactions?.items.length === 0 ? (
+                    <TableRow className="border-zinc-200 dark:border-zinc-800">
+                      <TableCell colSpan={6} className="text-center text-zinc-500 py-8">
+                        No on-the-spot sales yet. Go to Inventory to record a sale.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    transactions?.items.map((t) => {
+                      const total = (t.unit_price || 0) * t.quantity;
+                      return (
+                        <TableRow key={t.id} className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50">
+                          <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(t.created_at)}</TableCell>
+                          <TableCell>
+                            <p className="font-medium text-zinc-900 dark:text-white">{t.product?.name || "Unknown"}</p>
+                            <p className="text-xs text-zinc-500">{t.product?.sku}</p>
+                          </TableCell>
+                          <TableCell className="text-right"><Badge variant="secondary">{t.quantity}</Badge></TableCell>
+                          <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{formatCurrency(t.unit_price)}</TableCell>
+                          <TableCell className="text-right font-medium text-zinc-900 dark:text-white">{formatCurrency(total)}</TableCell>
+                          <TableCell className="text-zinc-500 dark:text-zinc-400 text-sm max-w-[150px] truncate">{t.reference_note || "—"}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+              {spotTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Page {spotPage} of {spotTotalPages}</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setSpotPage((p) => Math.max(1, p - 1))} disabled={spotPage === 1} className="border-zinc-300 dark:border-zinc-700">
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setSpotPage((p) => Math.min(spotTotalPages, p + 1))} disabled={spotPage === spotTotalPages} className="border-zinc-300 dark:border-zinc-700">
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="md:hidden space-y-3">
+            {spotLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <Card key={i} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
                   <CardContent className="p-4">
-                    {/* Product and total */}
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-medium text-zinc-900 dark:text-white">
-                          {transaction.product?.name || "Unknown Product"}
-                        </p>
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                          {transaction.product?.sku}
-                        </p>
-                      </div>
-                      <p className="font-bold text-lg text-green-600 dark:text-green-400">
-                        {formatCurrency(total)}
-                      </p>
+                    <Skeleton className="h-5 w-32 mb-2" />
+                    <Skeleton className="h-4 w-48 mb-3" />
+                    <div className="flex justify-between">
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-6 w-16" />
                     </div>
-
-                    {/* Details row */}
-                    <div className="flex justify-between items-center text-sm mb-2">
-                      <span className="text-zinc-500 dark:text-zinc-400">
-                        {formatDate(transaction.created_at)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-zinc-600 dark:text-zinc-400">
-                          {transaction.quantity} × {formatCurrency(transaction.unit_price)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Note if present */}
-                    {transaction.reference_note && (
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700 pt-2 mt-2 truncate">
-                        {transaction.reference_note}
-                      </p>
-                    )}
                   </CardContent>
                 </Card>
-              );
-            })}
-
-            {/* Mobile Pagination */}
-            {totalPages > 1 && (
+              ))
+            ) : transactions?.items.length === 0 ? (
+              <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
+                <CardContent className="p-8 text-center text-zinc-500">No on-the-spot sales yet.</CardContent>
+              </Card>
+            ) : (
+              transactions?.items.map((t) => {
+                const total = (t.unit_price || 0) * t.quantity;
+                return (
+                  <Card key={t.id} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-medium text-zinc-900 dark:text-white">{t.product?.name || "Unknown"}</p>
+                          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t.product?.sku}</p>
+                        </div>
+                        <p className="font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(total)}</p>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-zinc-500 dark:text-zinc-400">{formatDate(t.created_at)}</span>
+                        <span className="text-zinc-600 dark:text-zinc-400">{t.quantity} × {formatCurrency(t.unit_price)}</span>
+                      </div>
+                      {t.reference_note && (
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700 pt-2 mt-2 truncate">{t.reference_note}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+            {spotTotalPages > 1 && transactions && transactions.items.length > 0 && (
               <div className="flex items-center justify-between pt-2">
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  Page {currentPage} of {totalPages}
-                </p>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">Page {spotPage} of {spotTotalPages}</p>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="border-zinc-300 dark:border-zinc-700"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                    className="border-zinc-300 dark:border-zinc-700"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setSpotPage((p) => Math.max(1, p - 1))} disabled={spotPage === 1} className="border-zinc-300 dark:border-zinc-700"><ChevronLeft className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => setSpotPage((p) => Math.min(spotTotalPages, p + 1))} disabled={spotPage === spotTotalPages} className="border-zinc-300 dark:border-zinc-700"><ChevronRight className="h-4 w-4" /></Button>
                 </div>
               </div>
             )}
-          </>
-        )}
-      </motion.div>
+          </motion.div>
+        </>
+      )}
+
+      {activeTab === "invoiced" && (
+        <>
+          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              {invoiceLoading ? "Loading..." : `${invoicesData?.total ?? 0} invoices`}
+            </p>
+            <Button
+              onClick={() => setShowInvoiceForm(true)}
+              disabled={!selectedWarehouse}
+              title={!selectedWarehouse ? "Select a warehouse first" : undefined}
+              className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create Invoice
+            </Button>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="hidden md:block">
+            <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-200 dark:border-zinc-800">
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Invoice #</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Customer</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Items</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Total</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Status</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Due Date</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Created</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoiceLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i} className="border-zinc-200 dark:border-zinc-800">
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : invoicesData?.items.length === 0 ? (
+                    <TableRow className="border-zinc-200 dark:border-zinc-800">
+                      <TableCell colSpan={8} className="text-center text-zinc-500 py-12">
+                        No invoices yet. Click &quot;Create Invoice&quot; to add one.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    invoicesData?.items.map((inv) => (
+                      <TableRow
+                        key={inv.id}
+                        className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 cursor-pointer"
+                        onClick={() => {
+                          setSelectedInvoiceId(inv.id);
+                          setInvoiceDetailOpen(true);
+                        }}
+                      >
+                        <TableCell className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{inv.invoice_number}</TableCell>
+                        <TableCell className="font-medium text-zinc-900 dark:text-white">{inv.customer_name}</TableCell>
+                        <TableCell><Badge variant="secondary">{inv.item_count}</Badge></TableCell>
+                        <TableCell className="text-right font-medium text-green-600 dark:text-green-400">{formatCurrency(inv.total)}</TableCell>
+                        <TableCell><InvoiceStatusBadge status={inv.status} /></TableCell>
+                        <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{inv.due_date ? formatDate(inv.due_date) : "—"}</TableCell>
+                        <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(inv.created_at)}</TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-1 flex-wrap">
+                            {inv.status === "DRAFT" && (
+                              <Button size="sm" variant="outline" onClick={() => confirmMutation.mutate(inv.id)} disabled={confirmMutation.isPending} className="text-xs">
+                                Confirm
+                              </Button>
+                            )}
+                            {inv.status === "CONFIRMED" && (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs">
+                                  Mark Paid
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => voidMutation.mutate(inv.id)} disabled={voidMutation.isPending} className="text-xs text-red-600">
+                                  Void
+                                </Button>
+                              </>
+                            )}
+                            <Button size="sm" variant="ghost" onClick={() => { setSelectedInvoiceId(inv.id); setInvoiceDetailOpen(true); }} className="text-xs">
+                              View
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              {invoiceTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Page {invoicePage} of {invoiceTotalPages}</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setInvoicePage((p) => Math.max(1, p - 1))} disabled={invoicePage === 1} className="border-zinc-300 dark:border-zinc-700"><ChevronLeft className="h-4 w-4 mr-1" /> Previous</Button>
+                    <Button variant="outline" size="sm" onClick={() => setInvoicePage((p) => Math.min(invoiceTotalPages, p + 1))} disabled={invoicePage === invoiceTotalPages} className="border-zinc-300 dark:border-zinc-700">Next <ChevronRight className="h-4 w-4 ml-1" /></Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="md:hidden space-y-3">
+            {invoiceLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <Card key={i} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                  <CardContent className="p-4">
+                    <Skeleton className="h-5 w-32 mb-2" />
+                    <Skeleton className="h-4 w-48 mb-3" />
+                    <div className="flex justify-between">
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-6 w-16" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : invoicesData?.items.length === 0 ? (
+              <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
+                <CardContent className="p-8 text-center text-zinc-500">
+                  No invoices yet. Tap &quot;Create Invoice&quot; to add one.
+                </CardContent>
+              </Card>
+            ) : (
+              invoicesData?.items.map((inv) => (
+                <Card
+                  key={inv.id}
+                  className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                  onClick={() => {
+                    setSelectedInvoiceId(inv.id);
+                    setInvoiceDetailOpen(true);
+                  }}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-medium text-zinc-900 dark:text-white">{inv.invoice_number}</p>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{inv.customer_name}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <InvoiceStatusBadge status={inv.status} />
+                        <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(inv.total)}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-zinc-500">{inv.item_count} items • Due: {inv.due_date ? formatDate(inv.due_date) : "—"}</p>
+                    <div className="flex gap-2 mt-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      {inv.status === "DRAFT" && (
+                        <Button size="sm" variant="outline" onClick={() => confirmMutation.mutate(inv.id)} disabled={confirmMutation.isPending} className="text-xs flex-1">Confirm</Button>
+                      )}
+                      {inv.status === "CONFIRMED" && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs flex-1">Mark Paid</Button>
+                          <Button size="sm" variant="outline" onClick={() => voidMutation.mutate(inv.id)} disabled={voidMutation.isPending} className="text-xs flex-1 text-red-600">Void</Button>
+                        </>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedInvoiceId(inv.id); setInvoiceDetailOpen(true); }} className="text-xs flex-1">View Details</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+            {invoiceTotalPages > 1 && invoicesData && invoicesData.items.length > 0 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">Page {invoicePage} of {invoiceTotalPages}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setInvoicePage((p) => Math.max(1, p - 1))} disabled={invoicePage === 1} className="border-zinc-300 dark:border-zinc-700"><ChevronLeft className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => setInvoicePage((p) => Math.min(invoiceTotalPages, p + 1))} disabled={invoicePage === invoiceTotalPages} className="border-zinc-300 dark:border-zinc-700"><ChevronRight className="h-4 w-4" /></Button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </>
+      )}
+
+      {showInvoiceForm && selectedWarehouse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl my-8">
+            <InvoiceForm
+              warehouseId={selectedWarehouse}
+              onSuccess={() => setShowInvoiceForm(false)}
+              onCancel={() => setShowInvoiceForm(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <InvoiceDetailSheet
+        invoiceId={selectedInvoiceId}
+        open={invoiceDetailOpen}
+        onOpenChange={setInvoiceDetailOpen}
+      />
     </motion.div>
   );
 }
