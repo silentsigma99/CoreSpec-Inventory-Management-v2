@@ -10,4 +10,4 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm start -- -H 0.0.0.0 -p 3000"
+cmd = "npm start"
