@@ -4,7 +4,5 @@ buildCommand = "npm run build"
 
 [deploy]
 startCommand = "sh scripts/start-railway.sh"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

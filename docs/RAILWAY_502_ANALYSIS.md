@@ -243,6 +243,16 @@ The issue is likely Railway-specific infrastructure:
 
 **Code change:** Switched to `sh scripts/start-railway.sh` which runs `npx next start -H 0.0.0.0` (no `-p` flag). Next.js uses `process.env.PORT` automatically.
 
+### Attempt 7: Healthcheck vs External Routing (Feb 2026)
+
+**Observation:** `/api/health` log appears in deploy logs → internal healthcheck reaches the app. But both `/` and `/api/health` return 502 from external (browser). Domain target port already set to 8080.
+
+**Conclusion:** Internal healthcheck works; external traffic fails. Railway edge proxy may have a routing bug when healthcheck is configured.
+
+**Action:** Removed `healthcheckPath` and `healthcheckTimeout` from `railway.toml`. Also remove healthcheck from Railway Dashboard → Service → Settings → Health Check (if configured).
+
+**Reference:** [Railway Help - 502 despite successful startup](https://station.railway.com/questions/502-bad-gateway-error-despite-successful-93a4ded9) — pinned solution: remove healthcheck from Railway dashboard.
+
 ---
 
 ## Lessons Learned
