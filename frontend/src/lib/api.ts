@@ -99,6 +99,23 @@ export const api = {
     return res.json();
   },
 
+  async createBulkTransfer(data: {
+    from_warehouse_id: string;
+    to_warehouse_id: string;
+    items: { product_id: string; quantity: number }[];
+    reference_note?: string;
+  }) {
+    const res = await fetchApi("/api/transfers/bulk", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || "Failed to create bulk transfer");
+    }
+    return res.json();
+  },
+
   // Sales
   async recordSale(data: {
     warehouse_id: string;

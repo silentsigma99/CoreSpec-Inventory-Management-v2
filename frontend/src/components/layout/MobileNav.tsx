@@ -117,7 +117,6 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: "Inventory", href: "/inventory", icon: "inventory" },
-  { name: "Transfers", href: "/transfers", icon: "transfer", adminOnly: true },
   { name: "Purchases", href: "/purchases", icon: "purchase", adminOnly: true },
   { name: "Sales", href: "/sales", icon: "sales" },
   { name: "History", href: "/history", icon: "history" },
