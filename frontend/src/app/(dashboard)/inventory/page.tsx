@@ -89,14 +89,19 @@ export default function InventoryPage() {
     setCurrentPage(1);
   }, [brand]);
 
-  // Quick-sell state
+  // Clear transfer selection when switching warehouses
+  useEffect(() => {
+    setSelectedItems({});
+  }, [selectedWarehouse]);
+
+  // Quick-sell state (Partner warehouses)
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [sellQuantity, setSellQuantity] = useState<string>("1");
   const [sellPrice, setSellPrice] = useState<string>("");
   const [sellNote, setSellNote] = useState<string>("");
 
-  // Quick-transfer state (Main Warehouse only)
-  const [transferQuantity, setTransferQuantity] = useState<string>("1");
+  // Bulk transfer state (Main Warehouse only)
+  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
   const [transferDestination, setTransferDestination] = useState<string>("");
   const [transferNote, setTransferNote] = useState<string>("");
 
@@ -166,19 +171,24 @@ export default function InventoryPage() {
     },
   });
 
-  // Transfer mutation (Main Warehouse)
-  const transferMutation = useMutation({
+  // Bulk transfer mutation (Main Warehouse)
+  const bulkTransferMutation = useMutation({
     mutationFn: (data: {
       from_warehouse_id: string;
       to_warehouse_id: string;
-      product_id: string;
-      quantity: number;
+      items: { product_id: string; quantity: number }[];
       reference_note?: string;
-    }) => api.createTransfer(data),
-    onSuccess: () => {
-      toast.success("Transfer completed successfully");
-      resetTransferForm();
-      setExpandedRowId(null);
+    }) => api.createBulkTransfer(data),
+    onSuccess: (data: { succeeded: number; failed: number; total: number; results: { product_id: string; success: boolean; error?: string }[] }) => {
+      if (data.failed === 0) {
+        toast.success(`Successfully transferred ${data.succeeded} items`);
+      } else if (data.succeeded > 0) {
+        const failedProducts = data.results.filter((r) => !r.success).map((r) => r.error || "Unknown error").join("; ");
+        toast.warning(`${data.succeeded} of ${data.total} transferred. Failed: ${failedProducts}`);
+      } else {
+        toast.error("All transfers failed");
+      }
+      setSelectedItems({});
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
@@ -193,35 +203,80 @@ export default function InventoryPage() {
     setSellNote("");
   };
 
-  const resetTransferForm = () => {
-    setTransferQuantity("1");
-    setTransferDestination(partnerWarehouses[0]?.id ?? "");
-    setTransferNote("");
-  };
-
   const handleRowClick = (item: InventoryItem) => {
+    if (showTransferUI) return; // Main Warehouse: no expand, use checkboxes
     if (item.quantity_on_hand <= 0) {
-      toast.error(showTransferUI ? "No stock available to transfer" : "No stock available to sell");
+      toast.error("No stock available to sell");
       return;
     }
-
     if (expandedRowId === item.id) {
       setExpandedRowId(null);
       resetSellForm();
-      resetTransferForm();
     } else {
-      if (showTransferUI) {
-        setTransferQuantity("1");
-        setTransferDestination(partnerWarehouses[0]?.id ?? "");
-        setTransferNote("");
-      } else {
-        setSellPrice(item.product.retail_price?.toString() || "");
-        setSellQuantity("1");
-        setSellNote("");
-      }
+      setSellPrice(item.product.retail_price?.toString() || "");
+      setSellQuantity("1");
+      setSellNote("");
       setExpandedRowId(item.id);
     }
   };
+
+  const handleTransferCheckboxChange = (item: InventoryItem, checked: boolean) => {
+    if (checked) {
+      setSelectedItems((prev) => ({ ...prev, [item.product_id]: 1 }));
+    } else {
+      setSelectedItems((prev) => {
+        const next = { ...prev };
+        delete next[item.product_id];
+        return next;
+      });
+    }
+  };
+
+  const handleTransferQuantityChange = (productId: string, value: string) => {
+    const qty = parseInt(value, 10);
+    if (isNaN(qty) || qty < 1) return;
+    setSelectedItems((prev) => ({ ...prev, [productId]: qty }));
+  };
+
+  const handleSelectAll = (items: InventoryItem[]) => {
+    const withStock = items.filter((i) => i.quantity_on_hand > 0);
+    const allSelected = withStock.every((i) => selectedItems[i.product_id]);
+    if (allSelected) {
+      setSelectedItems((prev) => {
+        const next = { ...prev };
+        withStock.forEach((i) => delete next[i.product_id]);
+        return next;
+      });
+    } else {
+      setSelectedItems((prev) => {
+        const next = { ...prev };
+        withStock.forEach((i) => (next[i.product_id] = next[i.product_id] ?? 1));
+        return next;
+      });
+    }
+  };
+
+  const handleBulkTransferSubmit = () => {
+    if (!transferDestination) {
+      toast.error("Please select a destination warehouse");
+      return;
+    }
+    const items = Object.entries(selectedItems)
+      .filter(([, qty]) => qty > 0)
+      .map(([product_id, quantity]) => ({ product_id, quantity }));
+    if (items.length === 0) {
+      toast.error("No items selected");
+      return;
+    }
+    bulkTransferMutation.mutate({
+      from_warehouse_id: selectedWarehouse,
+      to_warehouse_id: transferDestination,
+      items,
+      reference_note: transferNote.trim() || undefined,
+    });
+  };
+
+  const clearTransferSelection = () => setSelectedItems({});
 
   /**
    * Handle sale submission
@@ -271,30 +326,6 @@ export default function InventoryPage() {
   const handleCancel = () => {
     setExpandedRowId(null);
     resetSellForm();
-    resetTransferForm();
-  };
-
-  const handleTransferSubmit = (item: InventoryItem) => {
-    const qty = parseInt(transferQuantity, 10);
-    if (isNaN(qty) || qty <= 0) {
-      toast.error("Quantity must be a positive number");
-      return;
-    }
-    if (qty > item.quantity_on_hand) {
-      toast.error(`Insufficient stock. Available: ${item.quantity_on_hand}`);
-      return;
-    }
-    if (!transferDestination) {
-      toast.error("Please select a destination warehouse");
-      return;
-    }
-    transferMutation.mutate({
-      from_warehouse_id: selectedWarehouse,
-      to_warehouse_id: transferDestination,
-      product_id: item.product_id,
-      quantity: qty,
-      reference_note: transferNote.trim() || undefined,
-    });
   };
 
   const containerVariants = {
@@ -320,12 +351,14 @@ export default function InventoryPage() {
     );
   }
 
+  const selectedCount = Object.keys(selectedItems).length;
+
   return (
     <motion.div
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="space-y-6"
+      className={`space-y-6 ${showTransferUI && selectedCount > 0 ? "pb-24" : ""}`}
     >
       {/* Header */}
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -408,13 +441,32 @@ export default function InventoryPage() {
           <Table className="min-w-[700px]">
             <TableHeader>
               <TableRow className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50">
-                <TableHead className="text-zinc-600 dark:text-zinc-400 w-8"></TableHead>
+                {showTransferUI ? (
+                  <TableHead className="text-zinc-600 dark:text-zinc-400 w-10">
+                    <input
+                      type="checkbox"
+                      checked={inventory?.items?.length
+                        ? inventory.items.filter((i) => i.quantity_on_hand > 0).length > 0 &&
+                          inventory.items.filter((i) => i.quantity_on_hand > 0).every((i) => selectedItems[i.product_id])
+                        : false}
+                      onChange={() => inventory && handleSelectAll(inventory.items)}
+                      className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
+                    />
+                  </TableHead>
+                ) : (
+                  <TableHead className="text-zinc-600 dark:text-zinc-400 w-8"></TableHead>
+                )}
                 <TableHead className="text-zinc-600 dark:text-zinc-400">Product Code</TableHead>
                 <TableHead className="text-zinc-600 dark:text-zinc-400">Product</TableHead>
                 <TableHead className="text-zinc-600 dark:text-zinc-400">Brand</TableHead>
                 <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
                   Quantity
                 </TableHead>
+                {showTransferUI && (
+                  <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
+                    Transfer
+                  </TableHead>
+                )}
                 <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
                   Retail Price
                 </TableHead>
@@ -435,6 +487,7 @@ export default function InventoryPage() {
                     <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                    {showTransferUI && <TableCell><Skeleton className="h-4 w-12" /></TableCell>}
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
@@ -443,7 +496,7 @@ export default function InventoryPage() {
               ) : inventory?.items.length === 0 ? (
                 <TableRow className="border-zinc-200 dark:border-zinc-800">
                   <TableCell
-                    colSpan={8}
+                    colSpan={showTransferUI ? 9 : 8}
                     className="text-center text-zinc-500 py-8"
                   >
                     No inventory items found
@@ -453,25 +506,38 @@ export default function InventoryPage() {
                 inventory?.items.map((item) => {
                   const isExpanded = expandedRowId === item.id;
                   const hasStock = item.quantity_on_hand > 0;
+                  const isSelected = !!selectedItems[item.product_id];
+                  const transferQty = selectedItems[item.product_id] ?? 1;
 
                   return (
                     <Fragment key={item.id}>
-                      {/* Main inventory row - clickable to expand */}
                       <TableRow
-                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock
+                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock && !showTransferUI
                           ? "cursor-pointer hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
-                          : "opacity-60"
-                          } ${isExpanded ? "bg-zinc-100/50 dark:bg-zinc-800/50" : ""}`}
-                        onClick={() => hasStock && handleRowClick(item)}
+                          : ""
+                          } ${!hasStock ? "opacity-60" : ""} ${isExpanded ? "bg-zinc-100/50 dark:bg-zinc-800/50" : ""}`}
+                        onClick={() => !showTransferUI && hasStock && handleRowClick(item)}
                       >
-                        {/* Expand indicator */}
-                        <TableCell className="w-8">
-                          {hasStock && (
-                            isExpanded
-                              ? <ChevronDown className="h-4 w-4 text-zinc-500" />
-                              : <ChevronRight className="h-4 w-4 text-zinc-500" />
-                          )}
-                        </TableCell>
+                        {showTransferUI ? (
+                          <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                            {hasStock && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => handleTransferCheckboxChange(item, e.target.checked)}
+                                className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
+                              />
+                            )}
+                          </TableCell>
+                        ) : (
+                          <TableCell className="w-8">
+                            {hasStock && (
+                              isExpanded
+                                ? <ChevronDown className="h-4 w-4 text-zinc-500" />
+                                : <ChevronRight className="h-4 w-4 text-zinc-500" />
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell className="font-mono text-sm text-zinc-600 dark:text-zinc-300">
                           {item.product.sku}
                         </TableCell>
@@ -490,6 +556,22 @@ export default function InventoryPage() {
                             <span className="text-zinc-900 dark:text-white">{item.quantity_on_hand}</span>
                           )}
                         </TableCell>
+                        {showTransferUI && (
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            {hasStock && isSelected ? (
+                              <Input
+                                type="number"
+                                min={1}
+                                max={item.quantity_on_hand}
+                                value={transferQty}
+                                onChange={(e) => handleTransferQuantityChange(item.product_id, e.target.value)}
+                                className="w-16 h-8 text-center bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                              />
+                            ) : (
+                              <span className="text-zinc-400">—</span>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell className="text-right text-zinc-500 dark:text-zinc-400">
                           {formatCurrency(item.product.retail_price)}
                         </TableCell>
@@ -501,95 +583,23 @@ export default function InventoryPage() {
                         </TableCell>
                       </TableRow>
 
-                      {/* Expanded row: Transfer (Main Warehouse) or Sale */}
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <TableRow
-                            key={`${item.id}-expand`}
-                            className="border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 shadow-inner"
-                          >
-                            <TableCell colSpan={8} className="p-0">
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                                className="overflow-hidden"
-                              >
-                                <div className="p-4 sm:p-6">
-                                  {showTransferUI ? (
-                                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
-                                      <div className="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:gap-4">
-                                        <div className="space-y-2">
-                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
-                                            Destination
-                                          </label>
-                                          <Select
-                                            value={transferDestination}
-                                            onValueChange={setTransferDestination}
-                                          >
-                                            <SelectTrigger
-                                              className="w-full sm:w-[150px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              <SelectValue placeholder="Select warehouse" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {partnerWarehouses.map((wh) => (
-                                                <SelectItem key={wh.id} value={wh.id}>
-                                                  {wh.name}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                        <div className="space-y-2">
-                                          <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
-                                            Quantity
-                                          </label>
-                                          <Input
-                                            type="number"
-                                            min="1"
-                                            max={item.quantity_on_hand}
-                                            value={transferQuantity}
-                                            onChange={(e) => setTransferQuantity(e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="w-full sm:w-20 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                          />
-                                          <p className="text-[10px] text-zinc-500 pl-1">Max: {item.quantity_on_hand}</p>
-                                        </div>
-                                      </div>
-                                      <div className="space-y-2">
-                                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
-                                          Note (optional)
-                                        </label>
-                                        <Input
-                                          type="text"
-                                          value={transferNote}
-                                          onChange={(e) => setTransferNote(e.target.value)}
-                                          onClick={(e) => e.stopPropagation()}
-                                          placeholder="e.g., Transfer to CarProofing"
-                                          className="w-full sm:w-[140px] bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
-                                        />
-                                      </div>
-                                      <div className="flex gap-3 pt-2 sm:pt-6">
-                                        <Button
-                                          variant="outline"
-                                          onClick={(e) => { e.stopPropagation(); handleCancel(); }}
-                                          className="flex-1 sm:flex-none border-zinc-300 dark:border-zinc-700"
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button
-                                          onClick={(e) => { e.stopPropagation(); handleTransferSubmit(item); }}
-                                          disabled={transferMutation.isPending || !transferDestination}
-                                          className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white sm:min-w-[140px]"
-                                        >
-                                          {transferMutation.isPending ? "Processing..." : "Confirm Transfer"}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
+                      {/* Expanded row: Sale only (Partner warehouses) */}
+                      {!showTransferUI && (
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <TableRow
+                              key={`${item.id}-expand`}
+                              className="border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 shadow-inner"
+                            >
+                              <TableCell colSpan={8} className="p-0">
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: "auto", opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="p-4 sm:p-6">
                                     <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
                                       <div className="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:gap-4">
                                         <div className="space-y-2">
@@ -650,23 +660,23 @@ export default function InventoryPage() {
                                         </Button>
                                       </div>
                                     </div>
-                                  )}
-                                  {!showTransferUI && sellQuantity && sellPrice && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm">
-                                      <p className="text-zinc-600 dark:text-zinc-400">
-                                        Total: <span className="font-semibold text-zinc-900 dark:text-white">{formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}</span>
-                                      </p>
-                                      <p className="text-zinc-600 dark:text-zinc-400">
-                                        Stock after sale: <span className="font-medium text-zinc-900 dark:text-white">{item.quantity_on_hand - parseInt(sellQuantity || "0", 10)} units</span>
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              </motion.div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </AnimatePresence>
+                                    {sellQuantity && sellPrice && (
+                                      <div className="mt-4 pt-4 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm">
+                                        <p className="text-zinc-600 dark:text-zinc-400">
+                                          Total: <span className="font-semibold text-zinc-900 dark:text-white">{formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}</span>
+                                        </p>
+                                        <p className="text-zinc-600 dark:text-zinc-400">
+                                          Stock after sale: <span className="font-medium text-zinc-900 dark:text-white">{item.quantity_on_hand - parseInt(sellQuantity || "0", 10)} units</span>
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </AnimatePresence>
+                      )}
                     </Fragment>
                   );
                 })
@@ -708,6 +718,58 @@ export default function InventoryPage() {
         </Card>
       </motion.div>
 
+      {/* Sticky Bulk Transfer Toolbar (Main Warehouse only) */}
+      {showTransferUI && Object.keys(selectedItems).length > 0 && (
+        <motion.div
+          variants={itemVariants}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-4"
+        >
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              {Object.keys(selectedItems).length} item{Object.keys(selectedItems).length !== 1 ? "s" : ""} selected
+            </span>
+            <div className="flex-1 flex flex-col sm:flex-row gap-3">
+              <Select value={transferDestination} onValueChange={setTransferDestination}>
+                <SelectTrigger className="w-full sm:w-[180px] bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700">
+                  <SelectValue placeholder="Destination warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  {partnerWarehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="text"
+                value={transferNote}
+                onChange={(e) => setTransferNote(e.target.value)}
+                placeholder="Note (optional)"
+                className="flex-1 min-w-0 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={clearTransferSelection}
+                className="border-zinc-300 dark:border-zinc-700"
+              >
+                Clear Selection
+              </Button>
+              <Button
+                onClick={handleBulkTransferSubmit}
+                disabled={bulkTransferMutation.isPending || !transferDestination}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {bulkTransferMutation.isPending ? "Transferring..." : `Transfer ${Object.keys(selectedItems).length} Items`}
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
