@@ -1,9 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm run build"
+buildCommand = "npm run build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ 2>/dev/null || true"
 
 [deploy]
-startCommand = "npx next start -H 0.0.0.0 -p ${PORT:-3000}"
+startCommand = "HOSTNAME=0.0.0.0 PORT=${PORT:-3000} node .next/standalone/server.js"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
