@@ -114,9 +114,12 @@ export default function InventoryPage() {
   });
 
   const selectedWarehouseData = warehouses?.find((w) => w.id === selectedWarehouse);
-  const isMainWarehouse = isAdmin && selectedWarehouseData?.is_main === true;
-  const showTransferUI = isMainWarehouse;
-  const partnerWarehouses = useMemo(() => warehouses?.filter((w) => !w.is_main) ?? [], [warehouses]);
+  const isMainWarehouse = selectedWarehouseData?.is_main === true;
+  const showTransferUI = isAdmin;
+  const transferDestinations = useMemo(
+    () => warehouses?.filter((w) => w.id !== selectedWarehouse) ?? [],
+    [warehouses, selectedWarehouse]
+  );
 
   // Set default warehouse
   useEffect(() => {
@@ -128,12 +131,15 @@ export default function InventoryPage() {
     }
   }, [profile, isAdmin, warehouses, selectedWarehouse]);
 
-  // Set default transfer destination when partner warehouses load
+  // Set default transfer destination when warehouses load or selected warehouse changes
   useEffect(() => {
-    if (showTransferUI && partnerWarehouses.length > 0 && !transferDestination) {
-      setTransferDestination(partnerWarehouses[0].id);
+    if (showTransferUI && transferDestinations.length > 0) {
+      const isValid = transferDestinations.some((w) => w.id === transferDestination);
+      if (!isValid) {
+        setTransferDestination(transferDestinations[0].id);
+      }
     }
-  }, [showTransferUI, partnerWarehouses, transferDestination]);
+  }, [showTransferUI, transferDestinations, transferDestination]);
 
   // Fetch inventory for selected warehouse
   const {
@@ -206,7 +212,7 @@ export default function InventoryPage() {
   };
 
   const handleRowClick = (item: InventoryItem) => {
-    if (showTransferUI) return; // Main Warehouse: no expand, use checkboxes
+    if (showTransferUI && isMainWarehouse) return; // Main Warehouse: no expand, use checkboxes
     if (item.quantity_on_hand <= 0) {
       toast.error("No stock available to sell");
       return;
@@ -541,11 +547,11 @@ export default function InventoryPage() {
                   return (
                     <Fragment key={item.id}>
                       <TableRow
-                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock && !showTransferUI
+                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock && !(showTransferUI && isMainWarehouse)
                           ? "cursor-pointer hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
                           : ""
                           } ${!hasStock ? "opacity-60" : ""} ${isExpanded ? "bg-zinc-100/50 dark:bg-zinc-800/50" : ""}`}
-                        onClick={() => !showTransferUI && hasStock && handleRowClick(item)}
+                        onClick={() => !(showTransferUI && isMainWarehouse) && hasStock && handleRowClick(item)}
                       >
                         {showTransferUI ? (
                           <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
@@ -613,14 +619,14 @@ export default function InventoryPage() {
                       </TableRow>
 
                       {/* Expanded row: Sale only (Partner warehouses) */}
-                      {!showTransferUI && (
+                      {!isMainWarehouse && (
                         <AnimatePresence>
                           {isExpanded && (
                             <TableRow
                               key={`${item.id}-expand`}
                               className="border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 shadow-inner"
                             >
-                              <TableCell colSpan={8} className="p-0">
+                              <TableCell colSpan={showTransferUI ? 9 : 8} className="p-0">
                                 <motion.div
                                   initial={{ height: 0, opacity: 0 }}
                                   animate={{ height: "auto", opacity: 1 }}
@@ -765,7 +771,7 @@ export default function InventoryPage() {
                   <SelectValue placeholder="Destination warehouse" />
                 </SelectTrigger>
                 <SelectContent>
-                  {partnerWarehouses.map((wh) => (
+                  {transferDestinations.map((wh) => (
                     <SelectItem key={wh.id} value={wh.id}>
                       {wh.name}
                     </SelectItem>

@@ -62,6 +62,7 @@ interface Transaction {
   reference_note?: string;
   created_at: string;
   product?: Product;
+  from_warehouse?: { id: string; name: string };
 }
 
 interface Invoice {
@@ -310,6 +311,7 @@ export default function SalesHistoryPage() {
                 <TableHeader>
                   <TableRow className="border-zinc-200 dark:border-zinc-800">
                     <TableHead className="text-zinc-600 dark:text-zinc-400">Date</TableHead>
+                    <TableHead className="text-zinc-600 dark:text-zinc-400">Location</TableHead>
                     <TableHead className="text-zinc-600 dark:text-zinc-400">Product</TableHead>
                     <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Qty</TableHead>
                     <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Unit Price</TableHead>
@@ -322,6 +324,7 @@ export default function SalesHistoryPage() {
                     Array.from({ length: 5 }).map((_, i) => (
                       <TableRow key={i} className="border-zinc-200 dark:border-zinc-800">
                         <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
@@ -331,7 +334,7 @@ export default function SalesHistoryPage() {
                     ))
                   ) : transactions?.items.length === 0 ? (
                     <TableRow className="border-zinc-200 dark:border-zinc-800">
-                      <TableCell colSpan={6} className="text-center text-zinc-500 py-8">
+                      <TableCell colSpan={7} className="text-center text-zinc-500 py-8">
                         No on-the-spot sales yet. Go to Inventory to record a sale.
                       </TableCell>
                     </TableRow>
@@ -341,6 +344,11 @@ export default function SalesHistoryPage() {
                       return (
                         <TableRow key={t.id} className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50">
                           <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(t.created_at)}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-xs">
+                              {t.from_warehouse?.name || "—"}
+                            </Badge>
+                          </TableCell>
                           <TableCell>
                             <p className="font-medium text-zinc-900 dark:text-white">{t.product?.name || "Unknown"}</p>
                             <p className="text-xs text-zinc-500">{t.product?.sku}</p>
@@ -402,9 +410,16 @@ export default function SalesHistoryPage() {
                         </div>
                         <p className="font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(total)}</p>
                       </div>
-                      <div className="flex justify-between items-center text-sm">
+                      <div className="flex justify-between items-center text-sm flex-wrap gap-2">
                         <span className="text-zinc-500 dark:text-zinc-400">{formatDate(t.created_at)}</span>
-                        <span className="text-zinc-600 dark:text-zinc-400">{t.quantity} × {formatCurrency(t.unit_price)}</span>
+                        <div className="flex items-center gap-2">
+                          {t.from_warehouse?.name && (
+                            <Badge variant="secondary" className="text-xs">
+                              {t.from_warehouse.name}
+                            </Badge>
+                          )}
+                          <span className="text-zinc-600 dark:text-zinc-400">{t.quantity} × {formatCurrency(t.unit_price)}</span>
+                        </div>
                       </div>
                       {t.reference_note && (
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700 pt-2 mt-2 truncate">{t.reference_note}</p>

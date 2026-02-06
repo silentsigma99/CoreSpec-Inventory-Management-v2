@@ -108,11 +108,32 @@ export async function GET(
     }
   }
 
-  // Build query - transactions where this warehouse is source OR destination
-  let query = supabase
-    .from("transactions")
-    .select("*, products(*)")
-    .or(`from_warehouse_id.eq.${warehouseId},to_warehouse_id.eq.${warehouseId}`);
+  // Build warehouse filter based on transaction type direction:
+  // - TRANSFER_OUT / SALE: warehouse is the source (from_warehouse_id)
+  // - TRANSFER_IN / RESTOCK: warehouse is the destination (to_warehouse_id)
+  // - ADJUSTMENT: warehouse is the source (from_warehouse_id)
+  // - No type filter: show all transactions involving the warehouse in either direction
+  const applyWarehouseFilter = <T extends { eq: (col: string, val: string) => T; or: (filter: string) => T }>(q: T): T => {
+    if (!transactionType) {
+      return q.or(`from_warehouse_id.eq.${warehouseId},to_warehouse_id.eq.${warehouseId}`);
+    }
+    switch (transactionType) {
+      case "TRANSFER_OUT":
+      case "SALE":
+      case "ADJUSTMENT":
+        return q.eq("from_warehouse_id", warehouseId);
+      case "TRANSFER_IN":
+      case "RESTOCK":
+        return q.eq("to_warehouse_id", warehouseId);
+      default:
+        return q.or(`from_warehouse_id.eq.${warehouseId},to_warehouse_id.eq.${warehouseId}`);
+    }
+  };
+
+  // Build query with direction-aware warehouse filter
+  let query = applyWarehouseFilter(
+    supabase.from("transactions").select("*, products(*)")
+  );
 
   // Filter by type if specified
   if (transactionType) {
@@ -124,11 +145,10 @@ export async function GET(
     query = query.in("product_id", brandProductIds);
   }
 
-  // Get total count (must mirror all filters)
-  let countQuery = supabase
-    .from("transactions")
-    .select("id", { count: "exact" })
-    .or(`from_warehouse_id.eq.${warehouseId},to_warehouse_id.eq.${warehouseId}`);
+  // Get total count (mirrors all filters)
+  let countQuery = applyWarehouseFilter(
+    supabase.from("transactions").select("id", { count: "exact" })
+  );
 
   if (transactionType) {
     countQuery = countQuery.eq("transaction_type", transactionType);
