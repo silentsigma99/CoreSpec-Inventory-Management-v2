@@ -454,7 +454,7 @@ export default function SalesHistoryPage() {
 
       {activeTab === "invoiced" && (
         <>
-          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {invoiceLoading ? "Loading..." : `${invoicesData?.total ?? 0} invoices`}
             </p>
@@ -471,7 +471,7 @@ export default function SalesHistoryPage() {
             )}
           </motion.div>
 
-          <motion.div variants={itemVariants} className="hidden md:block">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="hidden md:block">
             <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 p-6 shadow-sm ring-1 ring-black/5 dark:ring-[#B8860B]">
               <Table>
                 <TableHeader>
@@ -581,7 +581,7 @@ export default function SalesHistoryPage() {
             </Card>
           </motion.div>
 
-          <motion.div variants={itemVariants} className="md:hidden space-y-3">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="md:hidden space-y-3">
             {invoiceLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <Card key={i} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
