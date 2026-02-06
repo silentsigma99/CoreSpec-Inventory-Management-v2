@@ -46,9 +46,10 @@ export async function GET(
   // Get query params
   const searchParams = request.nextUrl.searchParams;
   const page = parseInt(searchParams.get("page") || "1", 10);
-  const pageSize = parseInt(searchParams.get("page_size") || "50", 10);
+  const pageSize = Math.min(parseInt(searchParams.get("page_size") || "50", 10), 200);
   const search = searchParams.get("search");
   const brand = searchParams.get("brand");
+  const sort = searchParams.get("sort");
 
   // Get warehouse info
   const { data: warehouse, error: warehouseError } = await supabase
@@ -112,6 +113,13 @@ export async function GET(
   // Apply product filter if searching
   if (productIds !== null) {
     query = query.in("product_id", productIds);
+  }
+
+  // Apply ordering by quantity when sort is set
+  if (sort === "quantity_asc") {
+    query = query.order("quantity_on_hand", { ascending: true }).order("product_id");
+  } else if (sort === "quantity_desc") {
+    query = query.order("quantity_on_hand", { ascending: false }).order("product_id");
   }
 
   // Apply pagination

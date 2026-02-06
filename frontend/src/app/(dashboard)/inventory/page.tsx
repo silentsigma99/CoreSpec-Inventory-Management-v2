@@ -73,7 +73,8 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [brand, setBrand] = useState<string>("all");
-  const pageSize = 50;
+  const [sort, setSort] = useState<string>("default");
+  const [pageSize, setPageSize] = useState(50);
 
   // Debounce search
   useEffect(() => {
@@ -84,10 +85,10 @@ export default function InventoryPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset to page 1 when brand filter changes
+  // Reset to page 1 when brand, sort, or page size changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [brand]);
+  }, [brand, sort, pageSize]);
 
   // Clear transfer selection when switching warehouses
   useEffect(() => {
@@ -140,12 +141,13 @@ export default function InventoryPage() {
     isLoading,
     error,
   } = useQuery<InventoryResponse>({
-    queryKey: ["inventory", selectedWarehouse, currentPage, debouncedSearch, brand],
+    queryKey: ["inventory", selectedWarehouse, currentPage, debouncedSearch, brand, sort, pageSize],
     queryFn: () => api.getInventory(selectedWarehouse, {
       page: currentPage,
       limit: pageSize,
       search: debouncedSearch,
       brand: brand === "all" ? undefined : brand,
+      sort: sort === "default" ? undefined : (sort as "quantity_asc" | "quantity_desc"),
     }),
     enabled: !!selectedWarehouse,
   });
@@ -382,6 +384,33 @@ export default function InventoryPage() {
 
           {/* Brand Filter */}
           <BrandFilter value={brand} onChange={setBrand} />
+
+          {/* Sort by quantity */}
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="w-full sm:w-[180px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default</SelectItem>
+              <SelectItem value="quantity_asc">Quantity: Low to High</SelectItem>
+              <SelectItem value="quantity_desc">Quantity: High to Low</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Rows per page */}
+          <Select
+            value={pageSize.toString()}
+            onValueChange={(val) => setPageSize(parseInt(val, 10))}
+          >
+            <SelectTrigger className="w-full sm:w-[140px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
+              <SelectValue placeholder="Rows per page" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="50">50 per page</SelectItem>
+              <SelectItem value="100">100 per page</SelectItem>
+              <SelectItem value="200">200 per page</SelectItem>
+            </SelectContent>
+          </Select>
 
           {/* Warehouse selector (admin only) */}
           {isAdmin && warehouses && (

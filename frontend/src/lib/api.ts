@@ -39,13 +39,20 @@ export const api = {
   // Inventory
   async getInventory(
     warehouseId: string,
-    options?: { page?: number; limit?: number; search?: string; brand?: string }
+    options?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      brand?: string;
+      sort?: "quantity_asc" | "quantity_desc";
+    }
   ) {
     const params = new URLSearchParams();
     if (options?.page) params.set("page", options.page.toString());
     if (options?.limit) params.set("page_size", options.limit.toString());
     if (options?.search) params.set("search", options.search);
     if (options?.brand) params.set("brand", options.brand);
+    if (options?.sort) params.set("sort", options.sort);
 
     const query = params.toString() ? `?${params.toString()}` : "";
     const res = await fetchApi(`/api/inventory/${warehouseId}${query}`);
