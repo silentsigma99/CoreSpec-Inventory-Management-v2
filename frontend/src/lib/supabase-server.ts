@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 export interface UserContext {
   userId: string;
   email: string | null;
-  role: "admin" | "partner";
+  role: "admin" | "partner" | "viewer";
   warehouseId: string | null;
 }
 
@@ -111,7 +111,7 @@ export async function getUserFromRequest(): Promise<AuthResult> {
       profile = newProfile;
     }
 
-    const role = (profile.role as "admin" | "partner") || "partner";
+    const role = (profile.role as "admin" | "partner" | "viewer") || "partner";
 
     // Get warehouse if user is a partner
     let warehouseId: string | null = null;
@@ -169,7 +169,7 @@ export function requireWarehouseAccess(
   user: UserContext,
   warehouseId: string
 ): NextResponse | null {
-  if (user.role === "admin") {
+  if (user.role === "admin" || user.role === "viewer") {
     return null;
   }
 

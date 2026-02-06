@@ -92,7 +92,7 @@ function InvoiceStatusBadge({ status }: { status: string }) {
 }
 
 export default function SalesHistoryPage() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isViewer } = useAuth();
   const queryClient = useQueryClient();
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"spot" | "invoiced">("spot");
@@ -107,16 +107,16 @@ export default function SalesHistoryPage() {
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.getWarehouses(),
-    enabled: isAdmin,
+    enabled: isAdmin || isViewer,
   });
 
   useEffect(() => {
     if (profile?.warehouse_id && !selectedWarehouse) {
       setSelectedWarehouse(profile.warehouse_id);
-    } else if (isAdmin && warehouses?.length && !selectedWarehouse) {
+    } else if ((isAdmin || isViewer) && warehouses?.length && !selectedWarehouse) {
       setSelectedWarehouse(warehouses[0].id);
     }
-  }, [profile, isAdmin, warehouses, selectedWarehouse]);
+  }, [profile, isAdmin, isViewer, warehouses, selectedWarehouse]);
 
   useEffect(() => {
     setSpotPage(1);
@@ -229,7 +229,7 @@ export default function SalesHistoryPage() {
 
         <div className="flex gap-3 items-center flex-wrap">
           <BrandFilter value={brand} onChange={setBrand} />
-          {isAdmin && warehouses && (
+          {(isAdmin || isViewer) && warehouses && (
             <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
               <SelectTrigger className="w-full sm:w-[200px] border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
                 <SelectValue placeholder="Select warehouse" />
@@ -448,15 +448,17 @@ export default function SalesHistoryPage() {
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {invoiceLoading ? "Loading..." : `${invoicesData?.total ?? 0} invoices`}
             </p>
-            <Button
-              onClick={() => setShowInvoiceForm(true)}
-              disabled={!selectedWarehouse}
-              title={!selectedWarehouse ? "Select a warehouse first" : undefined}
-              className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Invoice
-            </Button>
+            {!isViewer && (
+              <Button
+                onClick={() => setShowInvoiceForm(true)}
+                disabled={!selectedWarehouse}
+                title={!selectedWarehouse ? "Select a warehouse first" : undefined}
+                className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Invoice
+              </Button>
+            )}
           </motion.div>
 
           <motion.div variants={itemVariants} className="hidden md:block">
@@ -513,12 +515,12 @@ export default function SalesHistoryPage() {
                         <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(inv.created_at)}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1 flex-wrap">
-                            {inv.status === "DRAFT" && (
+                            {!isViewer && inv.status === "DRAFT" && (
                               <Button size="sm" variant="outline" onClick={() => confirmMutation.mutate(inv.id)} disabled={confirmMutation.isPending} className="text-xs">
                                 Confirm
                               </Button>
                             )}
-                            {inv.status === "CONFIRMED" && (
+                            {!isViewer && inv.status === "CONFIRMED" && (
                               <>
                                 <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs">
                                   Mark Paid
@@ -593,10 +595,10 @@ export default function SalesHistoryPage() {
                     </div>
                     <p className="text-xs text-zinc-500">{inv.item_count} items • Due: {inv.due_date ? formatDate(inv.due_date) : "—"}</p>
                     <div className="flex gap-2 mt-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      {inv.status === "DRAFT" && (
+                      {!isViewer && inv.status === "DRAFT" && (
                         <Button size="sm" variant="outline" onClick={() => confirmMutation.mutate(inv.id)} disabled={confirmMutation.isPending} className="text-xs flex-1">Confirm</Button>
                       )}
-                      {inv.status === "CONFIRMED" && (
+                      {!isViewer && inv.status === "CONFIRMED" && (
                         <>
                           <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs flex-1">Mark Paid</Button>
                           <Button size="sm" variant="outline" onClick={() => voidMutation.mutate(inv.id)} disabled={voidMutation.isPending} className="text-xs flex-1 text-red-600">Void</Button>

@@ -38,7 +38,7 @@ export async function GET() {
   // Get warehouses user has access to
   let warehousesQuery = supabase.from("warehouses").select("*");
 
-  if (user.role !== "admin") {
+  if (user.role !== "admin" && user.role !== "viewer") {
     if (!user.warehouseId) {
       return NextResponse.json([]);
     }

@@ -74,7 +74,7 @@ const transactionTypeLabels: Record<string, string> = {
 };
 
 export default function HistoryPage() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isViewer } = useAuth();
 
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -84,17 +84,17 @@ export default function HistoryPage() {
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.getWarehouses(),
-    enabled: isAdmin,
+    enabled: isAdmin || isViewer,
   });
 
   // Set default warehouse
   useEffect(() => {
     if (profile?.warehouse_id && !selectedWarehouse) {
       setSelectedWarehouse(profile.warehouse_id);
-    } else if (isAdmin && warehouses?.length && !selectedWarehouse) {
+    } else if ((isAdmin || isViewer) && warehouses?.length && !selectedWarehouse) {
       setSelectedWarehouse(warehouses[0].id);
     }
-  }, [profile, isAdmin, warehouses, selectedWarehouse]);
+  }, [profile, isAdmin, isViewer, warehouses, selectedWarehouse]);
 
   // Fetch transactions
   const { data: transactionsData, isLoading } = useQuery<TransactionListResponse>({
@@ -152,7 +152,7 @@ export default function HistoryPage() {
           <BrandFilter value={brand} onChange={setBrand} />
 
           {/* Warehouse selector (admin only) */}
-          {isAdmin && warehouses && (
+          {(isAdmin || isViewer) && warehouses && (
             <Select
               value={selectedWarehouse}
               onValueChange={setSelectedWarehouse}

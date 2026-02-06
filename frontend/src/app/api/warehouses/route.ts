@@ -12,8 +12,8 @@ export async function GET() {
 
   let query = supabase.from("warehouses").select("*");
 
-  if (user.role === "admin") {
-    // Admins see all warehouses
+  if (user.role === "admin" || user.role === "viewer") {
+    // Admins and viewers see all warehouses
     query = query.order("name");
   } else {
     // Partners see only their warehouse

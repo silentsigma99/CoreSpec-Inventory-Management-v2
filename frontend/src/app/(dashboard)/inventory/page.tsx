@@ -66,7 +66,7 @@ interface Warehouse {
 }
 
 export default function InventoryPage() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isViewer } = useAuth();
   const queryClient = useQueryClient();
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -110,12 +110,13 @@ export default function InventoryPage() {
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["warehouses"],
     queryFn: () => api.getWarehouses(),
-    enabled: isAdmin,
+    enabled: isAdmin || isViewer,
   });
 
   const selectedWarehouseData = warehouses?.find((w) => w.id === selectedWarehouse);
   const isMainWarehouse = selectedWarehouseData?.is_main === true;
   const showTransferUI = isAdmin;
+  const canSell = !isViewer;
   const transferDestinations = useMemo(
     () => warehouses?.filter((w) => w.id !== selectedWarehouse) ?? [],
     [warehouses, selectedWarehouse]
@@ -125,11 +126,11 @@ export default function InventoryPage() {
   useEffect(() => {
     if (profile?.warehouse_id && !selectedWarehouse) {
       setSelectedWarehouse(profile.warehouse_id);
-    } else if (isAdmin && warehouses?.length && !selectedWarehouse) {
+    } else if ((isAdmin || isViewer) && warehouses?.length && !selectedWarehouse) {
       const mainWarehouse = warehouses.find((wh) => wh.is_main) ?? warehouses.find((wh) => wh.name === "Main Warehouse");
       setSelectedWarehouse(mainWarehouse?.id || warehouses[0].id);
     }
-  }, [profile, isAdmin, warehouses, selectedWarehouse]);
+  }, [profile, isAdmin, isViewer, warehouses, selectedWarehouse]);
 
   // Set default transfer destination when warehouses load or selected warehouse changes
   useEffect(() => {
@@ -212,6 +213,7 @@ export default function InventoryPage() {
   };
 
   const handleRowClick = (item: InventoryItem) => {
+    if (!canSell) return; // Viewers cannot sell
     if (showTransferUI && isMainWarehouse) return; // Main Warehouse: no expand, use checkboxes
     if (item.quantity_on_hand <= 0) {
       toast.error("No stock available to sell");
@@ -419,7 +421,7 @@ export default function InventoryPage() {
           </Select>
 
           {/* Warehouse selector (admin only) */}
-          {isAdmin && warehouses && (
+          {(isAdmin || isViewer) && warehouses && (
             <Select value={selectedWarehouse} onValueChange={(val) => {
               setSelectedWarehouse(val);
               setCurrentPage(1);
@@ -547,11 +549,11 @@ export default function InventoryPage() {
                   return (
                     <Fragment key={item.id}>
                       <TableRow
-                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock && !(showTransferUI && isMainWarehouse)
+                        className={`border-zinc-200 dark:border-zinc-800 transition-colors ${hasStock && canSell && !(showTransferUI && isMainWarehouse)
                           ? "cursor-pointer hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
                           : ""
                           } ${!hasStock ? "opacity-60" : ""} ${isExpanded ? "bg-zinc-100/50 dark:bg-zinc-800/50" : ""}`}
-                        onClick={() => !(showTransferUI && isMainWarehouse) && hasStock && handleRowClick(item)}
+                        onClick={() => canSell && !(showTransferUI && isMainWarehouse) && hasStock && handleRowClick(item)}
                       >
                         {showTransferUI ? (
                           <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
@@ -566,7 +568,7 @@ export default function InventoryPage() {
                           </TableCell>
                         ) : (
                           <TableCell className="w-8">
-                            {hasStock && (
+                            {hasStock && canSell && (
                               isExpanded
                                 ? <ChevronDown className="h-4 w-4 text-zinc-500" />
                                 : <ChevronRight className="h-4 w-4 text-zinc-500" />

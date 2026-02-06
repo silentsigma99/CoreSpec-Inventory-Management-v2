@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 // User profile from our API
 interface UserProfile {
   id: string;
-  role: "admin" | "partner";
+  role: "admin" | "partner" | "viewer";
   full_name?: string;
   warehouse_id?: string;
   warehouse_name?: string;
@@ -28,6 +28,7 @@ interface AuthContextType {
   session: Session | null;
   isLoading: boolean;
   isAdmin: boolean;
+  isViewer: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -159,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     isLoading,
     isAdmin: profile?.role === "admin",
+    isViewer: profile?.role === "viewer",
     signIn,
     signOut,
     refreshProfile,
