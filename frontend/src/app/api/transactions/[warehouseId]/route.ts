@@ -74,6 +74,7 @@ export async function GET(
   // Get query params
   const searchParams = request.nextUrl.searchParams;
   const transactionType = searchParams.get("transaction_type");
+  const excludeInvoiced = searchParams.get("exclude_invoiced") === "true";
   const brand = searchParams.get("brand");
   const page = parseInt(searchParams.get("page") || "1", 10);
   const pageSize = Math.min(
@@ -133,6 +134,11 @@ export async function GET(
     query = query.in("product_id", brandProductIds);
   }
 
+  // Exclude invoice-linked sales when requested (for On-the-Spot tab)
+  if (transactionType === "SALE" && excludeInvoiced) {
+    query = query.is("invoice_id", null);
+  }
+
   // Get total count (mirrors all filters)
   const countBase = supabase.from("transactions").select("id", { count: "exact" });
   let countQuery = !transactionType
@@ -149,6 +155,10 @@ export async function GET(
 
   if (brandProductIds !== null) {
     countQuery = countQuery.in("product_id", brandProductIds);
+  }
+
+  if (transactionType === "SALE" && excludeInvoiced) {
+    countQuery = countQuery.is("invoice_id", null);
   }
 
   const { count: total } = await countQuery;

@@ -34,6 +34,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { BrandFilter } from "@/components/ui/brand-filter";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,8 @@ interface Invoice {
   customer_name: string;
   status: string;
   total: number;
+  amount_paid: number;
+  balance_due: number;
   due_date: string | null;
   created_at: string;
   item_count: number;
@@ -80,13 +83,14 @@ function InvoiceStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     DRAFT: "bg-zinc-500/20 text-zinc-400",
     CONFIRMED: "bg-blue-500/20 text-blue-400",
+    PARTIALLY_PAID: "bg-amber-500/20 text-amber-400",
     PAID: "bg-green-500/20 text-green-400",
     CANCELLED: "bg-zinc-500/20 text-zinc-500 line-through",
     VOID: "bg-red-500/20 text-red-400",
   };
   return (
     <Badge variant="secondary" className={cn("text-xs", styles[status] || "")}>
-      {status}
+      {status === "PARTIALLY_PAID" ? "PARTIAL" : status}
     </Badge>
   );
 }
@@ -102,6 +106,8 @@ export default function SalesHistoryPage() {
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false);
+  const [paymentDialogInvoice, setPaymentDialogInvoice] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
   const pageSize = 20;
 
   const { data: warehouses } = useQuery<Warehouse[]>({
@@ -129,10 +135,11 @@ export default function SalesHistoryPage() {
     page: number;
     page_size: number;
   }>({
-    queryKey: ["transactions", selectedWarehouse, "SALE", spotPage, brand],
+    queryKey: ["transactions", selectedWarehouse, "SALE", true, spotPage, brand],
     queryFn: () =>
       api.getTransactions(selectedWarehouse, {
         transaction_type: "SALE",
+        exclude_invoiced: true,
         page: spotPage,
         page_size: pageSize,
         brand: brand === "all" ? undefined : brand,
@@ -166,9 +173,10 @@ export default function SalesHistoryPage() {
   });
 
   const payMutation = useMutation({
-    mutationFn: (id: string) => api.markInvoicePaid(id),
-    onSuccess: () => {
-      toast.success("Invoice marked as paid");
+    mutationFn: ({ id, amount }: { id: string; amount?: number }) =>
+      api.markInvoicePaid(id, amount ? { amount } : undefined),
+    onSuccess: (_data, variables) => {
+      toast.success(variables.amount ? `Payment of ${formatCurrency(variables.amount)} recorded` : "Invoice marked as paid");
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -203,14 +211,6 @@ export default function SalesHistoryPage() {
     visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
   };
   const itemVariants = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
-
-  if (spotError || invoiceError) {
-    return (
-      <div className="text-red-500 dark:text-red-400 p-4">
-        Error: {(spotError || invoiceError)?.message}
-      </div>
-    );
-  }
 
   return (
     <motion.div
@@ -332,6 +332,12 @@ export default function SalesHistoryPage() {
                         <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       </TableRow>
                     ))
+                  ) : spotError ? (
+                    <TableRow className="border-zinc-200 dark:border-zinc-800">
+                      <TableCell colSpan={7} className="text-center text-red-500 dark:text-red-400 py-8">
+                        Error loading sales: {spotError.message}
+                      </TableCell>
+                    </TableRow>
                   ) : transactions?.items.length === 0 ? (
                     <TableRow className="border-zinc-200 dark:border-zinc-800">
                       <TableCell colSpan={7} className="text-center text-zinc-500 py-8">
@@ -393,6 +399,10 @@ export default function SalesHistoryPage() {
                   </CardContent>
                 </Card>
               ))
+            ) : spotError ? (
+              <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
+                <CardContent className="p-8 text-center text-red-500 dark:text-red-400">Error loading sales: {spotError.message}</CardContent>
+              </Card>
             ) : transactions?.items.length === 0 ? (
               <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
                 <CardContent className="p-8 text-center text-zinc-500">No on-the-spot sales yet.</CardContent>
@@ -490,14 +500,26 @@ export default function SalesHistoryPage() {
                         <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       </TableRow>
                     ))
-                  ) : invoicesData?.items.length === 0 ? (
+                  ) : invoiceError ? (
+                    <TableRow className="border-zinc-200 dark:border-zinc-800">
+                      <TableCell colSpan={8} className="text-center text-red-500 dark:text-red-400 py-12">
+                        Error loading invoices: {invoiceError.message}
+                      </TableCell>
+                    </TableRow>
+                  ) : !selectedWarehouse ? (
+                    <TableRow className="border-zinc-200 dark:border-zinc-800">
+                      <TableCell colSpan={8} className="text-center text-zinc-500 py-12">
+                        Select a warehouse to view invoices.
+                      </TableCell>
+                    </TableRow>
+                  ) : (invoicesData?.items ?? []).length === 0 ? (
                     <TableRow className="border-zinc-200 dark:border-zinc-800">
                       <TableCell colSpan={8} className="text-center text-zinc-500 py-12">
                         No invoices yet. Click &quot;Create Invoice&quot; to add one.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    invoicesData?.items.map((inv) => (
+                    (invoicesData?.items ?? []).map((inv) => (
                       <TableRow
                         key={inv.id}
                         className="border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 cursor-pointer"
@@ -509,7 +531,14 @@ export default function SalesHistoryPage() {
                         <TableCell className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{inv.invoice_number}</TableCell>
                         <TableCell className="font-medium text-zinc-900 dark:text-white">{inv.customer_name}</TableCell>
                         <TableCell><Badge variant="secondary">{inv.item_count}</Badge></TableCell>
-                        <TableCell className="text-right font-medium text-green-600 dark:text-green-400">{formatCurrency(inv.total)}</TableCell>
+                        <TableCell className="text-right">
+                          <span className="font-medium text-green-600 dark:text-green-400">{formatCurrency(inv.total)}</span>
+                          {inv.status === "PARTIALLY_PAID" && (
+                            <p className="text-xs text-amber-500 mt-0.5">
+                              Paid: {formatCurrency(inv.amount_paid)} | Due: {formatCurrency(inv.balance_due)}
+                            </p>
+                          )}
+                        </TableCell>
                         <TableCell><InvoiceStatusBadge status={inv.status} /></TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{inv.due_date ? formatDate(inv.due_date) : "—"}</TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(inv.created_at)}</TableCell>
@@ -520,10 +549,10 @@ export default function SalesHistoryPage() {
                                 Confirm
                               </Button>
                             )}
-                            {!isViewer && inv.status === "CONFIRMED" && (
+                            {!isViewer && (inv.status === "CONFIRMED" || inv.status === "PARTIALLY_PAID") && (
                               <>
-                                <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs">
-                                  Mark Paid
+                                <Button size="sm" variant="outline" onClick={() => { setPaymentDialogInvoice(inv); setPaymentAmount(""); }} disabled={payMutation.isPending} className="text-xs">
+                                  {inv.status === "PARTIALLY_PAID" ? "Record Payment" : "Mark Paid"}
                                 </Button>
                                 <Button size="sm" variant="outline" onClick={() => voidMutation.mutate(inv.id)} disabled={voidMutation.isPending} className="text-xs text-red-600">
                                   Void
@@ -566,14 +595,26 @@ export default function SalesHistoryPage() {
                   </CardContent>
                 </Card>
               ))
-            ) : invoicesData?.items.length === 0 ? (
+            ) : invoiceError ? (
+              <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
+                <CardContent className="p-8 text-center text-red-500 dark:text-red-400">
+                  Error loading invoices: {invoiceError.message}
+                </CardContent>
+              </Card>
+            ) : !selectedWarehouse ? (
+              <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
+                <CardContent className="p-8 text-center text-zinc-500">
+                  Select a warehouse to view invoices.
+                </CardContent>
+              </Card>
+            ) : (invoicesData?.items ?? []).length === 0 ? (
               <Card className="bg-white dark:bg-zinc-900 border-black dark:border-zinc-800 ring-1 ring-black/5 dark:ring-[#B8860B]">
                 <CardContent className="p-8 text-center text-zinc-500">
                   No invoices yet. Tap &quot;Create Invoice&quot; to add one.
                 </CardContent>
               </Card>
             ) : (
-              invoicesData?.items.map((inv) => (
+              (invoicesData?.items ?? []).map((inv) => (
                 <Card
                   key={inv.id}
                   className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
@@ -594,13 +635,18 @@ export default function SalesHistoryPage() {
                       </div>
                     </div>
                     <p className="text-xs text-zinc-500">{inv.item_count} items • Due: {inv.due_date ? formatDate(inv.due_date) : "—"}</p>
+                    {inv.status === "PARTIALLY_PAID" && (
+                      <p className="text-xs text-amber-500 mt-1">
+                        Paid: {formatCurrency(inv.amount_paid)} | Due: {formatCurrency(inv.balance_due)}
+                      </p>
+                    )}
                     <div className="flex gap-2 mt-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
                       {!isViewer && inv.status === "DRAFT" && (
                         <Button size="sm" variant="outline" onClick={() => confirmMutation.mutate(inv.id)} disabled={confirmMutation.isPending} className="text-xs flex-1">Confirm</Button>
                       )}
-                      {!isViewer && inv.status === "CONFIRMED" && (
+                      {!isViewer && (inv.status === "CONFIRMED" || inv.status === "PARTIALLY_PAID") && (
                         <>
-                          <Button size="sm" variant="outline" onClick={() => payMutation.mutate(inv.id)} disabled={payMutation.isPending} className="text-xs flex-1">Mark Paid</Button>
+                          <Button size="sm" variant="outline" onClick={() => { setPaymentDialogInvoice(inv); setPaymentAmount(""); }} disabled={payMutation.isPending} className="text-xs flex-1">{inv.status === "PARTIALLY_PAID" ? "Record Payment" : "Mark Paid"}</Button>
                           <Button size="sm" variant="outline" onClick={() => voidMutation.mutate(inv.id)} disabled={voidMutation.isPending} className="text-xs flex-1 text-red-600">Void</Button>
                         </>
                       )}
@@ -610,7 +656,7 @@ export default function SalesHistoryPage() {
                 </Card>
               ))
             )}
-            {invoiceTotalPages > 1 && invoicesData && invoicesData.items.length > 0 && (
+            {invoiceTotalPages > 1 && (invoicesData?.items ?? []).length > 0 && (
               <div className="flex items-center justify-between pt-2">
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">Page {invoicePage} of {invoiceTotalPages}</p>
                 <div className="flex gap-2">
@@ -621,6 +667,57 @@ export default function SalesHistoryPage() {
             )}
           </motion.div>
         </>
+      )}
+
+      {paymentDialogInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-sm bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-zinc-900 dark:text-white">Record Payment</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Invoice: <span className="font-mono">{paymentDialogInvoice.invoice_number}</span>
+              </p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                Balance Due: <span className="font-bold text-amber-600 dark:text-amber-400">{formatCurrency(paymentDialogInvoice.balance_due)}</span>
+              </p>
+              <Input
+                type="number"
+                min={0}
+                max={paymentDialogInvoice.balance_due}
+                step={0.01}
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder={`Enter amount (max: ${formatCurrency(paymentDialogInvoice.balance_due)})`}
+                className="bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setPaymentDialogInvoice(null)} className="flex-1 border-zinc-300 dark:border-zinc-700">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    const amt = parseFloat(paymentAmount);
+                    if (paymentAmount && !isNaN(amt) && amt > 0) {
+                      payMutation.mutate({ id: paymentDialogInvoice.id, amount: amt });
+                    } else {
+                      payMutation.mutate({ id: paymentDialogInvoice.id });
+                    }
+                    setPaymentDialogInvoice(null);
+                    setPaymentAmount("");
+                  }}
+                  disabled={payMutation.isPending}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {paymentAmount && parseFloat(paymentAmount) > 0
+                    ? `Pay ${formatCurrency(parseFloat(paymentAmount))}`
+                    : `Pay Full (${formatCurrency(paymentDialogInvoice.balance_due)})`}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {showInvoiceForm && selectedWarehouse && (

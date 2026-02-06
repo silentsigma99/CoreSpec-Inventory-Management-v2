@@ -255,13 +255,25 @@ export const api = {
     return res.json();
   },
 
-  async markInvoicePaid(invoiceId: string) {
+  async markInvoicePaid(invoiceId: string, options?: { amount?: number; payment_method?: string; reference_note?: string }) {
     const res = await fetchApi(`/api/invoices/${invoiceId}/pay`, {
+      method: "POST",
+      body: JSON.stringify(options || {}),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to record payment");
+    }
+    return res.json();
+  },
+
+  async cancelInvoice(invoiceId: string) {
+    const res = await fetchApi(`/api/invoices/${invoiceId}/cancel`, {
       method: "POST",
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || "Failed to mark invoice paid");
+      throw new Error(err.detail || "Failed to cancel invoice");
     }
     return res.json();
   },
@@ -282,6 +294,7 @@ export const api = {
     warehouseId: string,
     options?: {
       transaction_type?: string;
+      exclude_invoiced?: boolean;
       brand?: string;
       page?: number;
       page_size?: number;
@@ -290,6 +303,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.transaction_type)
       params.set("transaction_type", options.transaction_type);
+    if (options?.exclude_invoiced) params.set("exclude_invoiced", "true");
     if (options?.brand) params.set("brand", options.brand);
     if (options?.page) params.set("page", options.page.toString());
     if (options?.page_size)

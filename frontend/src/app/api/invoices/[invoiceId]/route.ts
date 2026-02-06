@@ -58,9 +58,17 @@ export async function GET(
     product: item.products ?? null,
   }));
 
+  // Fetch payments for this invoice
+  const { data: payments } = await supabase
+    .from("payments")
+    .select("id, amount, payment_method, reference_note, recorded_by, created_at")
+    .eq("invoice_id", invoiceId)
+    .order("created_at", { ascending: true });
+
   return NextResponse.json({
     ...invoice,
     items,
+    payments: payments || [],
   });
 }
 

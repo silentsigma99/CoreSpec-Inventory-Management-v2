@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("invoices")
-    .select("id, invoice_number, warehouse_id, customer_name, status, total, due_date, created_at, confirmed_at, paid_at", { count: "exact" })
+    .select("id, invoice_number, warehouse_id, customer_name, status, total, amount_paid, balance_due, due_date, created_at, confirmed_at, paid_at", { count: "exact" })
     .eq("warehouse_id", warehouseId)
     .is("deleted_at", null);
 
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + pageSize - 1);
 
   if (listError) {
+    console.error("[GET /api/invoices] Supabase error:", listError);
     return NextResponse.json({ detail: listError.message }, { status: 500 });
   }
 
