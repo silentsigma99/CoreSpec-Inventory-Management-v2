@@ -4,8 +4,11 @@ import { ReactNode } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { Toaster } from "@/components/ui/sonner";
+import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  useInventoryRealtime();
+
   return (
     <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Sidebar - hidden on mobile */}
