@@ -8,7 +8,8 @@
 -- 1. First, create users in Supabase Auth Dashboard:
 --    - admin@corespec.com (admin user)
 --    - partner1@corespec.com (CarProofing manager)
---    - partner2@corespec.com (Delta Sonic manager)
+--    - abdullah@corespec.com (Delta Sonic manager)
+--    - ahsan@corespec.com (viewer - read-only access to all warehouses)
 --
 -- 2. Get their UUIDs from auth.users table
 --
@@ -123,10 +124,11 @@ LIMIT 5;
 -- ============================================
 
 -- After creating users, run these updates (replace UUIDs):
--- 
+--
 -- UPDATE profiles SET role = 'admin', full_name = 'Admin User' WHERE id = 'ADMIN-UUID';
 -- UPDATE warehouses SET manager_id = 'PARTNER1-UUID' WHERE id = '00000000-0000-0000-0000-000000000002';
--- UPDATE warehouses SET manager_id = 'PARTNER2-UUID' WHERE id = '00000000-0000-0000-0000-000000000003';
+-- UPDATE warehouses SET manager_id = 'ABDULLAH-UUID' WHERE id = '00000000-0000-0000-0000-000000000003';
+-- UPDATE profiles SET role = 'viewer', full_name = 'Ahsan' WHERE id = 'AHSAN-UUID';
 
 -- ============================================
 -- VERIFICATION QUERIES
