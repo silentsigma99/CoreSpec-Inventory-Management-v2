@@ -493,9 +493,6 @@ export default function InventoryPage() {
                 ) : (
                   <TableHead className="text-zinc-600 dark:text-zinc-400 w-8"></TableHead>
                 )}
-                <TableHead className="text-zinc-600 dark:text-zinc-400">Product Code</TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400">Product</TableHead>
-                <TableHead className="text-zinc-600 dark:text-zinc-400">Brand</TableHead>
                 <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
                   Quantity
                 </TableHead>
@@ -504,6 +501,7 @@ export default function InventoryPage() {
                     Transfer
                   </TableHead>
                 )}
+                <TableHead className="text-zinc-600 dark:text-zinc-400">Product</TableHead>
                 <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
                   Retail Price
                 </TableHead>
@@ -513,6 +511,8 @@ export default function InventoryPage() {
                 <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">
                   Cost Price
                 </TableHead>
+                <TableHead className="text-zinc-600 dark:text-zinc-400">Brand</TableHead>
+                <TableHead className="text-zinc-600 dark:text-zinc-400">Product Code</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -520,14 +520,14 @@ export default function InventoryPage() {
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i} className="border-zinc-200 dark:border-zinc-800">
                     <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                     {showTransferUI && <TableCell><Skeleton className="h-4 w-12" /></TableCell>}
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : inventory?.items.length === 0 ? (
@@ -575,15 +575,6 @@ export default function InventoryPage() {
                             )}
                           </TableCell>
                         )}
-                        <TableCell className="font-mono text-sm text-zinc-600 dark:text-zinc-300">
-                          {item.product.sku}
-                        </TableCell>
-                        <TableCell className="font-medium text-zinc-900 dark:text-white">
-                          {item.product.name}
-                        </TableCell>
-                        <TableCell className="text-zinc-500 dark:text-zinc-400">
-                          {item.product.brand}
-                        </TableCell>
                         <TableCell className="text-right">
                           {item.quantity_on_hand < 5 ? (
                             <Badge variant="destructive">
@@ -609,6 +600,9 @@ export default function InventoryPage() {
                             )}
                           </TableCell>
                         )}
+                        <TableCell className="font-medium text-zinc-900 dark:text-white">
+                          {item.product.name}
+                        </TableCell>
                         <TableCell className="text-right text-zinc-500 dark:text-zinc-400">
                           {formatCurrency(item.product.retail_price)}
                         </TableCell>
@@ -617,6 +611,12 @@ export default function InventoryPage() {
                         </TableCell>
                         <TableCell className="text-right text-zinc-500 dark:text-zinc-400">
                           {formatCurrency(item.product.cost_price)}
+                        </TableCell>
+                        <TableCell className="text-zinc-500 dark:text-zinc-400">
+                          {item.product.brand}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-zinc-600 dark:text-zinc-300">
+                          {item.product.sku}
                         </TableCell>
                       </TableRow>
 
