@@ -29,11 +29,11 @@ INSERT INTO products (sku, name, brand, category, retail_price) VALUES
     ('CG-INS-16', 'InnerClean Interior Detailer', 'Chemical Guys', 'Interior', 14.99),
     ('CG-VSS-16', 'V07 Spray Sealant', 'Chemical Guys', 'Protection', 21.99),
     
-    -- CarPro Products  
-    ('CP-RELOAD-500', 'Reload Spray Sealant', 'CarPro', 'Protection', 29.99),
-    ('CP-ETCH-500', 'Eraser Intensive Polish', 'CarPro', 'Polish', 24.99),
-    ('CP-IRON-500', 'Iron X Iron Remover', 'CarPro', 'Decontamination', 22.99),
-    ('CP-PERL-500', 'Perl Plastic & Rubber Protectant', 'CarPro', 'Interior', 19.99),
+    -- Car Pro Products
+    ('CP-RELOAD-500', 'Reload Spray Sealant', 'Car Pro', 'Protection', 29.99),
+    ('CP-ETCH-500', 'Eraser Intensive Polish', 'Car Pro', 'Polish', 24.99),
+    ('CP-IRON-500', 'Iron X Iron Remover', 'Car Pro', 'Decontamination', 22.99),
+    ('CP-PERL-500', 'Perl Plastic & Rubber Protectant', 'Car Pro', 'Interior', 19.99),
     
     -- Nanoskin Products
     ('NS-CLAY-FINE', 'AutoScrub Fine Grade Clay Mitt', 'Nanoskin', 'Decontamination', 34.99),
@@ -83,7 +83,7 @@ SELECT
     -- Random stock between 5-25
     FLOOR(RANDOM() * 20 + 5)::int
 FROM products
-WHERE brand IN ('Chemical Guys', 'CarPro')
+WHERE brand IN ('Chemical Guys', 'Car Pro')
 LIMIT 8;
 
 -- ============================================
@@ -97,7 +97,7 @@ SELECT
     -- Random stock between 5-25
     FLOOR(RANDOM() * 20 + 5)::int
 FROM products
-WHERE brand IN ('CarPro', 'Gyeon', 'Meguiars')
+WHERE brand IN ('Car Pro', 'Gyeon', 'Meguiars')
 LIMIT 6;
 
 -- ============================================
