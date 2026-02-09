@@ -309,15 +309,6 @@ export default function InventoryPage() {
       return;
     }
 
-    // Margin protection: price must be >= cost_price
-    const costPrice = item.product.cost_price;
-    if (price !== undefined && costPrice !== undefined && price < costPrice) {
-      toast.error(
-        `Price (${formatCurrency(price)}) cannot be below cost (${formatCurrency(costPrice)})`
-      );
-      return;
-    }
-
     // Validate customer/note is provided
     if (!sellNote.trim()) {
       toast.error("Customer / Note is required");
@@ -667,9 +658,21 @@ export default function InventoryPage() {
                                               className="w-full sm:w-28 pl-10 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
                                             />
                                           </div>
-                                          {item.product.cost_price && (
-                                            <p className="text-[10px] text-zinc-500 pl-1">Min: <span className="text-amber-600 dark:text-amber-500">{formatCurrency(item.product.cost_price)}</span></p>
-                                          )}
+                                          {sellPrice && item.product.cost_price != null && (() => {
+                                            const unitProfit = parseFloat(sellPrice) - item.product.cost_price;
+                                            const qty = parseInt(sellQuantity || "0", 10);
+                                            const totalProfit = unitProfit * (isNaN(qty) ? 0 : qty);
+                                            const colorClass = unitProfit > 0
+                                              ? "text-green-600 dark:text-green-400"
+                                              : unitProfit < 0
+                                                ? "text-red-600 dark:text-red-400"
+                                                : "text-zinc-500";
+                                            return (
+                                              <p className={`text-[10px] pl-1 ${colorClass}`}>
+                                                Profit: {formatCurrency(unitProfit)}/unit ({formatCurrency(totalProfit)} total)
+                                              </p>
+                                            );
+                                          })()}
                                         </div>
                                       </div>
                                       <div className="space-y-2">
@@ -702,6 +705,20 @@ export default function InventoryPage() {
                                         <p className="text-zinc-600 dark:text-zinc-400">
                                           Total: <span className="font-semibold text-zinc-900 dark:text-white">{formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}</span>
                                         </p>
+                                        {item.product.cost_price != null && (() => {
+                                          const qty = parseInt(sellQuantity || "0", 10);
+                                          const totalProfit = (parseFloat(sellPrice) - item.product.cost_price) * (isNaN(qty) ? 0 : qty);
+                                          const colorClass = totalProfit > 0
+                                            ? "text-green-600 dark:text-green-400"
+                                            : totalProfit < 0
+                                              ? "text-red-600 dark:text-red-400"
+                                              : "text-zinc-600 dark:text-zinc-400";
+                                          return (
+                                            <p className={colorClass}>
+                                              Profit: <span className="font-semibold">{formatCurrency(totalProfit)}</span>
+                                            </p>
+                                          );
+                                        })()}
                                         <p className="text-zinc-600 dark:text-zinc-400">
                                           Stock after sale: <span className="font-medium text-zinc-900 dark:text-white">{item.quantity_on_hand - parseInt(sellQuantity || "0", 10)} units</span>
                                         </p>

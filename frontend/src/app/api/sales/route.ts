@@ -69,18 +69,6 @@ export async function POST(request: NextRequest) {
   // Determine final sale price
   const finalUnitPrice = unit_price ?? product.retail_price;
 
-  // Validate price against cost (margin protection)
-  if (finalUnitPrice != null && product.cost_price != null) {
-    if (finalUnitPrice < product.cost_price) {
-      return NextResponse.json(
-        {
-          detail: `Sale price ($${finalUnitPrice.toFixed(2)}) cannot be below cost ($${product.cost_price.toFixed(2)})`,
-        },
-        { status: 400 }
-      );
-    }
-  }
-
   // Get current stock for response (validation happens in RPC)
   const { data: inventory } = await supabase
     .from("inventory_items")
