@@ -35,7 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BrandFilter } from "@/components/ui/brand-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { InvoiceForm } from "@/components/invoices/InvoiceForm";
@@ -108,6 +108,7 @@ export default function SalesHistoryPage() {
   const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false);
   const [paymentDialogInvoice, setPaymentDialogInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [deleteDialogTransaction, setDeleteDialogTransaction] = useState<Transaction | null>(null);
   const pageSize = 20;
 
   const { data: warehouses } = useQuery<Warehouse[]>({
@@ -187,6 +188,16 @@ export default function SalesHistoryPage() {
     onSuccess: () => {
       toast.success("Invoice voided, stock restored");
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteSaleMutation = useMutation({
+    mutationFn: (id: string) => api.deleteSale(id),
+    onSuccess: () => {
+      toast.success("Sale deleted, stock restored");
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -317,6 +328,7 @@ export default function SalesHistoryPage() {
                     <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Unit Price</TableHead>
                     <TableHead className="text-zinc-600 dark:text-zinc-400 text-right">Total</TableHead>
                     <TableHead className="text-zinc-600 dark:text-zinc-400">Note</TableHead>
+                    {!isViewer && <TableHead className="text-zinc-600 dark:text-zinc-400"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -330,17 +342,18 @@ export default function SalesHistoryPage() {
                         <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        {!isViewer && <TableCell><Skeleton className="h-4 w-8" /></TableCell>}
                       </TableRow>
                     ))
                   ) : spotError ? (
                     <TableRow className="border-zinc-200 dark:border-zinc-800">
-                      <TableCell colSpan={7} className="text-center text-red-500 dark:text-red-400 py-8">
+                      <TableCell colSpan={isViewer ? 7 : 8} className="text-center text-red-500 dark:text-red-400 py-8">
                         Error loading sales: {spotError.message}
                       </TableCell>
                     </TableRow>
                   ) : transactions?.items.length === 0 ? (
                     <TableRow className="border-zinc-200 dark:border-zinc-800">
-                      <TableCell colSpan={7} className="text-center text-zinc-500 py-8">
+                      <TableCell colSpan={isViewer ? 7 : 8} className="text-center text-zinc-500 py-8">
                         No on-the-spot sales yet. Go to Inventory to record a sale.
                       </TableCell>
                     </TableRow>
@@ -363,6 +376,19 @@ export default function SalesHistoryPage() {
                           <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{formatCurrency(t.unit_price)}</TableCell>
                           <TableCell className="text-right font-medium text-zinc-900 dark:text-white">{formatCurrency(total)}</TableCell>
                           <TableCell className="text-zinc-500 dark:text-zinc-400 text-sm max-w-[150px] truncate">{t.reference_note || "—"}</TableCell>
+                          {!isViewer && (
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setDeleteDialogTransaction(t)}
+                                disabled={deleteSaleMutation.isPending}
+                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })
@@ -433,6 +459,20 @@ export default function SalesHistoryPage() {
                       </div>
                       {t.reference_note && (
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700 pt-2 mt-2 truncate">{t.reference_note}</p>
+                      )}
+                      {!isViewer && (
+                        <div className={cn("flex justify-end pt-2 mt-2", !t.reference_note && "border-t border-zinc-200 dark:border-zinc-700")}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeleteDialogTransaction(t)}
+                            disabled={deleteSaleMutation.isPending}
+                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10 text-xs"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -713,6 +753,48 @@ export default function SalesHistoryPage() {
                   {paymentAmount && parseFloat(paymentAmount) > 0
                     ? `Pay ${formatCurrency(parseFloat(paymentAmount))}`
                     : `Pay Full (${formatCurrency(paymentDialogInvoice.balance_due)})`}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {deleteDialogTransaction && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-sm bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-red-500">Delete Sale</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Are you sure you want to delete this sale? This will restore{" "}
+                <span className="font-bold text-zinc-900 dark:text-white">
+                  {deleteDialogTransaction.quantity}
+                </span>{" "}
+                unit(s) of{" "}
+                <span className="font-bold text-zinc-900 dark:text-white">
+                  {deleteDialogTransaction.product?.name || "Unknown"}
+                </span>{" "}
+                back to inventory.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialogTransaction(null)}
+                  className="flex-1 border-zinc-300 dark:border-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    deleteSaleMutation.mutate(deleteDialogTransaction.id);
+                    setDeleteDialogTransaction(null);
+                  }}
+                  disabled={deleteSaleMutation.isPending}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Delete Sale
                 </Button>
               </div>
             </CardContent>

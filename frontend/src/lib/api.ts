@@ -142,6 +142,17 @@ export const api = {
     return res.json();
   },
 
+  async deleteSale(transactionId: string) {
+    const res = await fetchApi(`/api/sales/${transactionId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to delete sale");
+    }
+    return res.json();
+  },
+
   // Purchase batches
   async getPurchaseBatches(
     warehouseId: string,

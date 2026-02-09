@@ -139,6 +139,9 @@ export async function GET(
     query = query.is("invoice_id", null);
   }
 
+  // Exclude soft-deleted transactions
+  query = query.is("deleted_at", null);
+
   // Get total count (mirrors all filters)
   const countBase = supabase.from("transactions").select("id", { count: "exact" });
   let countQuery = !transactionType
@@ -160,6 +163,8 @@ export async function GET(
   if (transactionType === "SALE" && excludeInvoiced) {
     countQuery = countQuery.is("invoice_id", null);
   }
+
+  countQuery = countQuery.is("deleted_at", null);
 
   const { count: total } = await countQuery;
 
