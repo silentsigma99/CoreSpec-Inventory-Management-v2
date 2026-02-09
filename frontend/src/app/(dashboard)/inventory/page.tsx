@@ -28,7 +28,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { BrandFilter } from "@/components/ui/brand-filter";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronLeft, Download } from "lucide-react";
+import { exportInventoryPDF, type PDFInventoryItem } from "@/lib/pdf-export";
 
 interface Product {
   id: string;
@@ -288,6 +289,43 @@ export default function InventoryPage() {
 
   const clearTransferSelection = () => setSelectedItems({});
 
+  // PDF Export
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    if (!selectedWarehouse) return;
+
+    setIsExporting(true);
+    const toastId = toast.loading("Generating PDF...");
+    try {
+      const allData = await api.getInventory(selectedWarehouse, { limit: 10000 });
+      const warehouseName = selectedWarehouseData?.name
+        ?? warehouses?.find((w) => w.id === selectedWarehouse)?.name
+        ?? "Warehouse";
+
+      const pdfItems: PDFInventoryItem[] = allData.items.map((item: InventoryItem) => ({
+        productName: item.product.name,
+        sku: item.product.sku,
+        brand: item.product.brand,
+        quantity: item.quantity_on_hand,
+        retailPrice: item.product.retail_price,
+        wholesalePrice: item.product.wholesale_price,
+        costPrice: item.product.cost_price,
+      }));
+
+      await exportInventoryPDF({
+        warehouseName,
+        items: pdfItems,
+      });
+
+      toast.success("PDF exported successfully", { id: toastId });
+    } catch {
+      toast.error("Failed to export PDF", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   /**
    * Handle sale submission
    */
@@ -371,6 +409,18 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex gap-4 items-center flex-wrap">
+          {/* Export PDF */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={isLoading || isExporting || !selectedWarehouse}
+            className="border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+          >
+            <Download className="h-4 w-4 mr-1" />
+            {isExporting ? "Exporting..." : "Export PDF"}
+          </Button>
+
           {/* Search Input */}
           <div className="relative">
             <Input
