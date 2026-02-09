@@ -29,6 +29,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BrandFilter } from "@/components/ui/brand-filter";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ChevronLeft, Download } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { exportInventoryPDF, type PDFInventoryItem } from "@/lib/pdf-export";
 
 interface Product {
@@ -96,6 +98,8 @@ export default function InventoryPage() {
     setSelectedItems({});
   }, [selectedWarehouse]);
 
+  const isMobile = useIsMobile();
+
   // Quick-sell state (Partner warehouses)
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [sellQuantity, setSellQuantity] = useState<string>("1");
@@ -159,6 +163,10 @@ export default function InventoryPage() {
     }),
     enabled: !!selectedWarehouse,
   });
+
+  const expandedItem = expandedRowId
+    ? inventory?.items.find((i) => i.id === expandedRowId) ?? null
+    : null;
 
   // Sale mutation for quick-sell
   const saleMutation = useMutation({
@@ -661,8 +669,8 @@ export default function InventoryPage() {
                         </TableCell>
                       </TableRow>
 
-                      {/* Expanded row: Sale only (Partner warehouses) */}
-                      {!isMainWarehouse && (
+                      {/* Expanded row: Sale only (Partner warehouses) — desktop only, mobile uses Sheet */}
+                      {!isMainWarehouse && !isMobile && (
                         <AnimatePresence>
                           {isExpanded && (
                             <TableRow
@@ -873,6 +881,126 @@ export default function InventoryPage() {
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Mobile Sale Bottom Sheet */}
+      {isMobile && (
+        <Sheet open={!!expandedItem} onOpenChange={(open) => { if (!open) handleCancel(); }}>
+          <SheetContent side="bottom" showCloseButton={false} className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800" onOpenAutoFocus={(e) => e.preventDefault()}>
+            {expandedItem && (
+              <>
+                <SheetHeader className="pb-0">
+                  <SheetTitle className="text-left text-zinc-900 dark:text-white text-base">
+                    {expandedItem.product.name}
+                  </SheetTitle>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 text-left">
+                    {expandedItem.product.brand} &middot; {expandedItem.product.sku} &middot; {expandedItem.quantity_on_hand} in stock
+                  </p>
+                </SheetHeader>
+                <div className="px-4 pb-4 space-y-3">
+                  {/* Qty + Unit Price side-by-side */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Qty</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={expandedItem.quantity_on_hand}
+                        value={sellQuantity}
+                        onChange={(e) => setSellQuantity(e.target.value)}
+                        className="bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                      />
+                      <p className="text-[10px] text-zinc-500">Max: {expandedItem.quantity_on_hand}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Unit Price</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">PKR</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={sellPrice}
+                          onChange={(e) => setSellPrice(e.target.value)}
+                          placeholder="0.00"
+                          className="pl-9 bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                        />
+                      </div>
+                      {sellPrice && expandedItem.product.cost_price != null && (() => {
+                        const unitProfit = parseFloat(sellPrice) - expandedItem.product.cost_price;
+                        const qty = parseInt(sellQuantity || "0", 10);
+                        const totalProfit = unitProfit * (isNaN(qty) ? 0 : qty);
+                        const colorClass = unitProfit > 0
+                          ? "text-green-600 dark:text-green-400"
+                          : unitProfit < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-zinc-500";
+                        return (
+                          <p className={`text-[10px] ${colorClass}`}>
+                            Profit: {formatCurrency(unitProfit)}/unit ({formatCurrency(totalProfit)} total)
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Customer / Note full width */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Customer / Note <span className="text-red-500">*</span></label>
+                    <Input
+                      type="text"
+                      value={sellNote}
+                      onChange={(e) => setSellNote(e.target.value)}
+                      placeholder="e.g., John's Auto Shop"
+                      className="bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                      required
+                    />
+                  </div>
+
+                  {/* Sale summary */}
+                  {sellQuantity && sellPrice && (
+                    <div className="text-xs space-y-1 bg-zinc-50 dark:bg-zinc-800/50 rounded-md p-2">
+                      <p className="text-zinc-600 dark:text-zinc-400">
+                        Total: <span className="font-semibold text-zinc-900 dark:text-white">{formatCurrency(parseFloat(sellPrice || "0") * parseInt(sellQuantity || "0", 10))}</span>
+                      </p>
+                      {expandedItem.product.cost_price != null && (() => {
+                        const qty = parseInt(sellQuantity || "0", 10);
+                        const totalProfit = (parseFloat(sellPrice) - expandedItem.product.cost_price) * (isNaN(qty) ? 0 : qty);
+                        const colorClass = totalProfit > 0
+                          ? "text-green-600 dark:text-green-400"
+                          : totalProfit < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-zinc-600 dark:text-zinc-400";
+                        return (
+                          <p className={colorClass}>
+                            Profit: <span className="font-semibold">{formatCurrency(totalProfit)}</span>
+                          </p>
+                        );
+                      })()}
+                      <p className="text-zinc-600 dark:text-zinc-400">
+                        Stock after sale: <span className="font-medium text-zinc-900 dark:text-white">{expandedItem.quantity_on_hand - parseInt(sellQuantity || "0", 10)} units</span>
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Buttons */}
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="outline" onClick={handleCancel} className="flex-1 border-zinc-300 dark:border-zinc-700">
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => handleSaleSubmit(expandedItem)}
+                      disabled={saleMutation.isPending}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {saleMutation.isPending ? "Processing..." : "Confirm Sale"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
       )}
     </motion.div>
   );
