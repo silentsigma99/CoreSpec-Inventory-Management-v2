@@ -132,7 +132,7 @@ export function InvoiceDetailSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 py-4 space-y-6">
+        <div className="flex-1 py-4 px-4 space-y-6">
           {isLoading || !invoice ? (
             <div className="space-y-4">
               <Skeleton className="h-6 w-full" />
